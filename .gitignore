@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local/editor files
+.vscode/
+.idea/
+*.log
+
+
+
+# Large/raw data files
+# Keep folder structure with .gitkeep files if needed, but do not commit raw datasets.
+data/raw/
+
+
+
+# OS files
+.DS_Store
+Thumbs.db
+
+Notes_pictures/

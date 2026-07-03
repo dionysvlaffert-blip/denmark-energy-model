@@ -1,0 +1,56 @@
+paths:
+  region_coordinates_file: data/processed/regions/denmark_region_coordinates_level1.csv
+  region_shapes_file: data/processed/regions/denmark_regionslevel1.geojson
+  eez_file: data/raw/eez_v11.gpkg
+  load_file: data/raw/load.csv
+  existing_power_plants_file: data/raw/global-power-plant-database/global_power_plant_database.csv
+  technology_parameters_file: data/raw/technolgy_parameters_2025.csv
+  renewable_availability_file: data/processed/renewable_potentials/denmark_renewable_availability_level1.csv
+  weather_cutout_file: data/raw/weather/2012/denmark_era5_2012.nc
+  weather_profiles_output_dir: data/processed/weather
+  network_output_dir: results/networks
+
+settings:
+  setting_name: full_grid_expansion
+  region_level: level1
+  weather_year: 2012
+  time_resolution: 3h
+  solver_name:  gurobi
+  load_year: 2025
+  load_distribution: area
+  existing_power_plants_generation_year: 2017
+  transmission_scenario: full_grid_expansion
+  transmission_initial_capacity_mw: 0
+  transmission_max_distance_km: 170
+  renewable_potential_multipliers:
+    solar: 1.0
+    onshore_wind: 1.0
+    offshore_wind: 1.0
+  renewable_potential_distribution: area
+  # maximal installierbare Leistung in Dänemark gesamt
+  renewable_potentials_mw:
+    solar: 6346.2
+    onshore_wind: 4320.4
+    offshore_wind: 3270.9
+  carriers:
+    - AC
+    - solar
+    - onshore_wind
+    - offshore_wind
+    - battery
+    - hydrogen
+    - gas
+    - coal
+    - oil
+    - hydro
+    - biomass
+
+  carrier_technology_map:
+    solar: solar-utility
+    onshore_wind: onwind
+    offshore_wind: offwind
+    gas: CCGT
+    coal: coal
+    oil: oil
+    hydro: hydro
+    biomass: biomass

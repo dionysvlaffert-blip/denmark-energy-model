@@ -1,0 +1,31 @@
+"""
+Fixed project assumptions used across the model.
+
+These values are not scenario inputs. Scenario-specific changes should be made
+in config settings or with functions from scenario_variations.py.
+"""
+
+COUNTRY = "Denmark"
+COUNTRY_CODE = "DK"
+EEZ_COUNTRY_CODE = "DNK"
+
+DISCOUNT_RATE = 0.07
+
+SOLAR_PANEL = "CdTe"
+SOLAR_ORIENTATION = "latitude_optimal"
+ONSHORE_WIND_TURBINE = "Vestas_V112_3MW"
+OFFSHORE_WIND_TURBINE = "Vestas_V112_3MW_offshore"
+
+BATTERY_STORAGE_HOURS = [2, 4, 6]
+HYDROGEN_STORAGE_HOURS = [168, 336, 672]
+
+TRANSMISSION_LENGTH_FACTOR = 1.5
+TRANSMISSION_COST_EUR_PER_MW_KM = 700
+LIMITED_GRID_MAX_CAPACITY_MW = 1000
+
+NUCLEAR_LIFETIME = 40
+NUCLEAR_FIXED_OM_PERCENT = 1.27
+NUCLEAR_VARIABLE_OM_EUR_PER_MWH = 4.459
+NUCLEAR_FUEL_EUR_PER_MWH_TH = 7.4536
+NUCLEAR_EFFICIENCY = 0.326
+NUCLEAR_CO2_INTENSITY = 0
