@@ -29,9 +29,9 @@ settings:
   renewable_potential_distribution: area
   # maximal installierbare Leistung in Dänemark gesamt
   renewable_potentials_mw:
-    solar: 6346.2
-    onshore_wind: 4320.4
-    offshore_wind: 3270.9
+    solar:   86190.0
+    onshore_wind: 11655.0
+    offshore_wind: 114975.0
   carriers:
     - AC
     - solar

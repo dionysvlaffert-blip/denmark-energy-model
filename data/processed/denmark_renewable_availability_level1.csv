@@ -1,0 +1,16 @@
+bus,carrier,available_area_km2,availability_share,region_name
+DK_region_1,wind_onshore,76.08,0.02956303699284731,Hovedstaden
+DK_region_1,pv,1498.1000000000001,0.5821291498289243,Hovedstaden
+DK_region_2,wind_onshore,1379.0,0.10496575052076446,Midtjylland
+DK_region_2,pv,8564.09,0.6518753693817069,Midtjylland
+DK_region_3,wind_onshore,824.27,0.10411721245850901,Nordjylland
+DK_region_3,pv,5060.81,0.6392534363523446,Nordjylland
+DK_region_4,wind_onshore,528.52,0.07202975849649164,Sjælland
+DK_region_4,pv,5260.6,0.7169449548676379,Sjælland
+DK_region_5,wind_onshore,1076.9,0.08841926289481312,Syddanmark
+DK_region_5,pv,8345.73,0.6852291716214399,Syddanmark
+DK_region_1,wind_offshore,10086.91,,Hovedstaden
+DK_region_2,wind_offshore,8121.21,,Midtjylland
+DK_region_3,wind_offshore,7378.54,,Nordjylland
+DK_region_4,wind_offshore,2718.78,,Sjælland
+DK_region_5,wind_offshore,10019.02,,Syddanmark
