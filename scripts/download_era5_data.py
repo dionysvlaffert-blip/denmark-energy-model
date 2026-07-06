@@ -25,7 +25,7 @@ requests.sessions.Session.request = request_without_ssl_verification
 import atlite
 
 
-YEAR = 2024
+YEAR = 2013
 
 # Atlite uses longitude as x and latitude as y.
 # Bounds for Denmark excluding Greenland and Faroe Islands, including Bornholm,
