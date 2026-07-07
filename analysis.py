@@ -1,6 +1,7 @@
 """
-analysis.py – Final version with all visual improvements
-Run from the project root folder.
+analysis.py – Final complete plotting script for Denmark Energy Model
+Covers all required visualisations from the assignment brief.
+Run from project root: python analysis.py
 """
 
 import pypsa
@@ -14,213 +15,188 @@ NET_DIR = "results/networks"
 OUT_DIR = "results/figures"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# Global font sizes
 plt.rcParams.update({
-    "font.size":        11,
-    "axes.titlesize":   13,
-    "axes.labelsize":   11,
-    "xtick.labelsize":  10,
-    "ytick.labelsize":  10,
-    "legend.fontsize":  10,
-    "figure.titlesize": 14,
+    "font.size": 11, "axes.titlesize": 13, "axes.labelsize": 11,
+    "xtick.labelsize": 10, "ytick.labelsize": 10,
+    "legend.fontsize": 10, "figure.titlesize": 14,
 })
 
 COLORS = {
-    "solar":         "#f9d71c",
-    "onshore_wind":  "#74c476",
-    "offshore_wind": "#2171b5",
-    "battery":       "#d94801",
-    "hydrogen":      "#756bb1",
-    "coal":          "#252525",
-    "gas":           "#fd8d3c",
-    "oil":           "#969696",
-    "biomass":       "#41ab5d",
-    "hydro":         "#6baed6",
-    "nuclear":       "#a1d99b",
-    "transmission":  "#636363",
+    "solar": "#f9d71c", "onshore_wind": "#74c476", "offshore_wind": "#2171b5",
+    "battery": "#d94801", "hydrogen": "#756bb1", "coal": "#252525",
+    "gas": "#fd8d3c", "oil": "#969696", "biomass": "#41ab5d",
+    "hydro": "#6baed6", "nuclear": "#a1d99b", "transmission": "#636363",
 }
 
-def color(carrier):
+def color(c):
     for k, v in COLORS.items():
-        if k in str(carrier).lower():
-            return v
+        if k in str(c).lower(): return v
     return "#aaaaaa"
 
-def load(filename):
-    return pypsa.Network(f"{NET_DIR}/{filename}")
+def load(f): return pypsa.Network(f"{NET_DIR}/{f}")
 
-def get_objective(n):
-    try:
-        if n.objective is None:
-            return None
-        return float(n.objective) / 1e9
-    except Exception:
-        return None
+def get_obj(n):
+    try: return float(n.objective) / 1e9 if n.objective else None
+    except: return None
 
 def gen_mix(n):
-    weights = n.snapshot_weightings.generators
-    gen = n.generators_t.p.mul(weights, axis=0).sum()
-    return gen.groupby(n.generators.carrier).sum() / 1e6
+    w = n.snapshot_weightings.generators
+    return (n.generators_t.p.mul(w, axis=0).sum()
+            .groupby(n.generators.carrier).sum() / 1e6)
 
 def get_caps(n):
-    caps = n.generators.groupby("carrier")["p_nom_opt"].sum() / 1e3
-    stor = n.storage_units.groupby("carrier")["p_nom_opt"].sum() / 1e3
-    return caps, stor
+    return (n.generators.groupby("carrier")["p_nom_opt"].sum() / 1e3,
+            n.storage_units.groupby("carrier")["p_nom_opt"].sum() / 1e3)
 
 def save(fig, name):
-    path = f"{OUT_DIR}/{name}.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.savefig(f"{OUT_DIR}/{name}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  ✓ {name}.png")
 
-def safe_sensitivity_data(files):
-    pcts, costs, caps_list, stor_list, nets = [], [], [], [], []
+def safe_load(files):
+    """Load sensitivity data, skip missing/failed networks."""
+    pcts, costs, caps_l, stor_l, nets = [], [], [], [], []
     for pct in sorted(files.keys(), reverse=True):
         try:
-            n = load(files[pct])
-            obj = get_objective(n)
-            if obj is None:
-                print(f"    ⚠ No objective: {files[pct]}")
-                continue
+            n = load(files[pct]); obj = get_obj(n)
+            if obj is None: continue
             pcts.append(pct); costs.append(obj)
-            caps, stor = get_caps(n)
-            caps_list.append(caps); stor_list.append(stor); nets.append(n)
+            c, s = get_caps(n); caps_l.append(c); stor_l.append(s); nets.append(n)
         except Exception as e:
-            print(f"    ⚠ Could not load {files[pct]}: {e}")
-    return pcts, costs, caps_list, stor_list, nets
+            print(f"    ⚠ {files[pct]}: {e}")
+    return pcts, costs, caps_l, stor_l, nets
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 00: Base Scenario Detail
+# PLOT 00a: Baseline — Mix, Capacities, Costs
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_00_base_scenario():
-    print("\n[00] Base Scenario Detail")
+def plot_00a():
+    print("\n[00a] Baseline Overview")
     n = load("02_baseline.nc")
-    weights = n.snapshot_weightings.generators
+    w = n.snapshot_weightings.generators
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
 
-    fig = plt.figure(figsize=(20, 14))
-    gs  = fig.add_gridspec(2, 3, hspace=0.4, wspace=0.35)
-
-    # ── 1. Electricity mix pie ─────────────────────────────────────────────────
-    ax1 = fig.add_subplot(gs[0, 0])
+    # Pie
+    ax = axes[0]
     mix = gen_mix(n); mix = mix[mix > 0].sort_values(ascending=False)
-    explode = [0.08 if v < 2 else 0 for v in mix.values]
-    wedges, texts, autotexts = ax1.pie(
-        mix, labels=None, autopct="%1.1f%%",
-        colors=[color(c) for c in mix.index],
-        explode=explode, startangle=90, counterclock=False,
-        pctdistance=0.78)
-    for at in autotexts: at.set_fontsize(9)
-    ax1.legend(mix.index, loc="lower left", fontsize=9,
-               bbox_to_anchor=(-0.1, -0.15), ncol=2)
-    ax1.set_title(f"Electricity Mix\n{mix.sum():.1f} TWh/year",
-                  fontweight="bold", fontsize=12)
+    exp = [0.08 if v < 2 else 0 for v in mix.values]
+    _, _, at = ax.pie(mix, labels=None, autopct="%1.1f%%",
+                      colors=[color(c) for c in mix.index],
+                      explode=exp, startangle=90, counterclock=False, pctdistance=0.78)
+    for a in at: a.set_fontsize(9)
+    ax.legend(mix.index, loc="lower center", fontsize=9,
+              bbox_to_anchor=(0.5, -0.18), ncol=3)
+    ax.set_title(f"Electricity Mix\n{mix.sum():.1f} TWh/year", fontweight="bold")
 
-    # ── 2. Installed capacities ────────────────────────────────────────────────
-    ax2 = fig.add_subplot(gs[0, 1])
+    # Capacities
+    ax = axes[1]
     caps, stor = get_caps(n)
-    all_caps = pd.concat([caps, stor])
-    all_caps = all_caps[all_caps > 0.001].sort_values(ascending=False)
-    ax2.bar(range(len(all_caps)), all_caps.values,
-            color=[color(c) for c in all_caps.index], edgecolor="white")
-    ax2.set_xticks(range(len(all_caps)))
-    ax2.set_xticklabels(all_caps.index, rotation=40, ha="right", fontsize=9)
-    ax2.set_ylabel("Capacity (GW)")
-    ax2.set_title("Installed Capacities", fontweight="bold")
-    ax2.grid(alpha=0.3, axis="y")
+    ac = pd.concat([caps, stor]); ac = ac[ac > 0.001].sort_values(ascending=False)
+    ax.bar(range(len(ac)), ac.values, color=[color(c) for c in ac.index], edgecolor="white")
+    ax.set_xticks(range(len(ac)))
+    ax.set_xticklabels(ac.index, rotation=40, ha="right", fontsize=9)
+    ax.set_ylabel("Capacity (GW)"); ax.set_title("Installed Capacities", fontweight="bold")
+    ax.grid(alpha=0.3, axis="y")
 
-    # ── 3. System cost breakdown ───────────────────────────────────────────────
-    ax3 = fig.add_subplot(gs[0, 2])
-    costs_by_carrier = {}
-    for gen in n.generators.index:
-        carrier  = n.generators.at[gen, "carrier"]
-        cap_cost = n.generators.at[gen, "capital_cost"] * n.generators.at[gen, "p_nom_opt"]
-        mar_cost = (n.generators_t.p[gen] * weights * n.generators.at[gen, "marginal_cost"]).sum()
-        costs_by_carrier[carrier] = costs_by_carrier.get(carrier, 0) + (cap_cost + mar_cost) / 1e9
-    cs = pd.Series(costs_by_carrier)
-    cs = cs[cs > 0].sort_values(ascending=False)
-    ax3.bar(range(len(cs)), cs.values,
-            color=[color(c) for c in cs.index], edgecolor="white")
-    ax3.set_xticks(range(len(cs)))
-    ax3.set_xticklabels(cs.index, rotation=40, ha="right", fontsize=9)
-    ax3.set_ylabel("Cost (B€/year)")
-    ax3.set_title(f"Cost by Technology\nTotal: {get_objective(n):.2f} B€/year",
-                  fontweight="bold")
-    ax3.grid(alpha=0.3, axis="y")
+    # Costs
+    ax = axes[2]
+    cb = {}
+    for g in n.generators.index:
+        car = n.generators.at[g, "carrier"]
+        cc = n.generators.at[g, "capital_cost"] * n.generators.at[g, "p_nom_opt"]
+        mc = (n.generators_t.p[g] * w * n.generators.at[g, "marginal_cost"]).sum()
+        cb[car] = cb.get(car, 0) + (cc + mc) / 1e9
+    cs = pd.Series(cb); cs = cs[cs > 0].sort_values(ascending=False)
+    ax.bar(range(len(cs)), cs.values, color=[color(c) for c in cs.index], edgecolor="white")
+    ax.set_xticks(range(len(cs)))
+    ax.set_xticklabels(cs.index, rotation=40, ha="right", fontsize=9)
+    ax.set_ylabel("Cost (B€/year)")
+    ax.set_title(f"Cost by Technology\nTotal: {get_obj(n):.2f} B€/year", fontweight="bold")
+    ax.grid(alpha=0.3, axis="y")
 
-    # ── 4. Dispatch winter week ────────────────────────────────────────────────
-    ax4 = fig.add_subplot(gs[1, :2])
+    fig.suptitle("Denmark – Baseline Scenario (1/2): Mix, Capacities & Costs",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "00a_baseline_overview")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 00b: Baseline — Dispatch + Regional Generation
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_00b():
+    print("\n[00b] Baseline Dispatch + Regional")
+    n = load("02_baseline.nc")
+    w = n.snapshot_weightings.generators
+    fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+    # Dispatch winter week
+    ax = axes[0]
     start = "2012-01-09"
-    snap  = n.snapshots[(n.snapshots >= start) &
-                        (n.snapshots < str(pd.Timestamp(start) + pd.Timedelta("7D")))]
+    snap = n.snapshots[(n.snapshots >= start) &
+                       (n.snapshots < str(pd.Timestamp(start) + pd.Timedelta("7D")))]
     gen_t = n.generators_t.p.loc[snap].copy()
     gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
     gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
     load_ts = n.loads_t.p_set.loc[snap].sum(axis=1) / 1e3
-    bottom = pd.Series(0.0, index=snap)
-    for carrier in gen_t.columns:
-        if gen_t[carrier].sum() > 0:
-            ax4.fill_between(snap, bottom, bottom + gen_t[carrier],
-                             label=carrier, color=color(carrier), alpha=0.85)
-            bottom += gen_t[carrier]
-    load_ts.plot(ax=ax4, color="black", linewidth=2, label="Load", zorder=10)
-    ax4.set_title("Dispatch — Winter Week (January)", fontweight="bold")
-    ax4.set_ylabel("Power (GW)")
-    ax4.legend(loc="upper left", fontsize=9, ncol=5)
-    ax4.grid(alpha=0.2)
+    bot = pd.Series(0.0, index=snap)
+    for car in gen_t.columns:
+        if gen_t[car].sum() > 0:
+            ax.fill_between(snap, bot, bot + gen_t[car],
+                            label=car, color=color(car), alpha=0.85)
+            bot += gen_t[car]
+    load_ts.plot(ax=ax, color="black", lw=2, label="Load", zorder=10)
+    ax.set_title("Dispatch — Winter Week (Jan 9–16)", fontweight="bold")
+    ax.set_ylabel("Power (GW)")
+    ax.legend(loc="upper left", fontsize=9, ncol=3, framealpha=0.9)
+    ax.grid(alpha=0.2)
 
-    # ── 5. Regional generation ────────────────────────────────────────────────
-    ax5 = fig.add_subplot(gs[1, 2])
-    regional_gen = {}
-    for gen in n.generators.index:
-        bus     = n.generators.at[gen, "bus"]
-        carrier = n.generators.at[gen, "carrier"]
-        mwh     = (n.generators_t.p[gen] * weights).sum() / 1e6
-        if bus not in regional_gen: regional_gen[bus] = {}
-        regional_gen[bus][carrier] = regional_gen[bus].get(carrier, 0) + mwh
+    # Regional generation
+    ax = axes[1]
+    rg = {}
+    for g in n.generators.index:
+        bus = n.generators.at[g, "bus"]; car = n.generators.at[g, "carrier"]
+        mwh = (n.generators_t.p[g] * w).sum() / 1e6
+        if bus not in rg: rg[bus] = {}
+        rg[bus][car] = rg[bus].get(car, 0) + mwh
+    regions = list(rg.keys())
+    carriers = [c for c in sorted(set(c for r in rg.values() for c in r))
+                if any(rg[r].get(c, 0) > 0 for r in regions)]
+    bot_arr = np.zeros(len(regions))
+    for car in carriers:
+        vals = [rg[r].get(car, 0) for r in regions]
+        ax.bar(regions, vals, bottom=bot_arr, label=car,
+               color=color(car), edgecolor="white")
+        bot_arr += np.array(vals)
+    ax.set_xticklabels(regions, rotation=35, ha="right", fontsize=10)
+    ax.set_ylabel("Generation (TWh/year)")
+    ax.set_title("Annual Generation by Region", fontweight="bold")
+    ax.legend(fontsize=9, ncol=2, loc="upper right", framealpha=0.9)
+    ax.grid(alpha=0.3, axis="y")
 
-    regions  = list(regional_gen.keys())
-    carriers = sorted(set(c for r in regional_gen.values() for c in r))
-    carriers = [c for c in carriers if any(regional_gen[r].get(c,0)>0 for r in regions)]
-    bottom_arr = np.zeros(len(regions))
-    for carrier in carriers:
-        vals = [regional_gen[r].get(carrier, 0) for r in regions]
-        ax5.bar(regions, vals, bottom=bottom_arr,
-                label=carrier, color=color(carrier), edgecolor="white")
-        bottom_arr += np.array(vals)
-    ax5.set_xticklabels(regions, rotation=40, ha="right", fontsize=9)
-    ax5.set_ylabel("Generation (TWh/year)")
-    ax5.set_title("Generation by Region", fontweight="bold")
-    ax5.legend(fontsize=8, ncol=2)
-    ax5.grid(alpha=0.3, axis="y")
-
-    fig.suptitle("Denmark – Baseline Scenario: Full System Overview",
-                 fontsize=15, fontweight="bold")
-    save(fig, "00_base_scenario_detail")
+    fig.suptitle("Denmark – Baseline Scenario (2/2): Dispatch & Regional Generation",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "00b_baseline_dispatch")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 01: Mix Baseline vs Zero CO2 — exploded pie for small slices
+# PLOT 01: Mix Baseline vs Zero CO2
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_01_mix():
-    print("\n[01] Baseline vs Zero CO2 Mix")
-    n_base = load("02_baseline.nc")
-    n_co2  = load("04_zero_co2.nc")
-
+def plot_01():
+    print("\n[01] Mix Baseline vs Zero CO2")
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-    for ax, (n, label) in zip(axes, [(n_base,"Baseline (no limit)"), (n_co2,"Zero CO₂")]):
-        mix = gen_mix(n); mix = mix[mix > 0].sort_values(ascending=False)
-        explode = [0.08 if v < 2 else 0 for v in mix.values]
-        wedges, texts, autotexts = ax.pie(
-            mix, labels=None, autopct="%1.1f%%",
-            colors=[color(c) for c in mix.index],
-            explode=explode, startangle=90, counterclock=False,
-            pctdistance=0.78)
-        for at in autotexts: at.set_fontsize(10)
-        ax.legend(mix.index, loc="lower left", fontsize=10,
-                  bbox_to_anchor=(-0.05, -0.18), ncol=2)
-        obj = get_objective(n)
-        ax.set_title(f"{label}\nTotal: {mix.sum():.1f} TWh/year | Cost: {obj:.2f} B€/year",
+    for ax, (fname, label) in zip(axes, [
+            ("02_baseline.nc", "Baseline (no limit)"),
+            ("04_zero_co2.nc", "Zero CO₂")]):
+        n = load(fname); mix = gen_mix(n); mix = mix[mix > 0].sort_values(ascending=False)
+        exp = [0.08 if v < 2 else 0 for v in mix.values]
+        _, _, at = ax.pie(mix, labels=None, autopct="%1.1f%%",
+                          colors=[color(c) for c in mix.index],
+                          explode=exp, startangle=90, counterclock=False, pctdistance=0.78)
+        for a in at: a.set_fontsize(10)
+        ax.legend(mix.index, loc="lower center", fontsize=10,
+                  bbox_to_anchor=(0.5, -0.18), ncol=3)
+        ax.set_title(f"{label}\n{mix.sum():.1f} TWh/year | {get_obj(n):.2f} B€/year",
                      fontsize=12, fontweight="bold")
     fig.suptitle("Denmark – Electricity Mix: Baseline vs Zero CO₂",
                  fontsize=14, fontweight="bold")
@@ -229,20 +205,20 @@ def plot_01_mix():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 02: Capacities
+# PLOT 02: Capacities Baseline vs Zero CO2
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_02_capacities():
+def plot_02():
     print("\n[02] Capacities")
-    n_base = load("02_baseline.nc"); n_co2 = load("04_zero_co2.nc")
-    all_carriers = set()
+    n_b = load("02_baseline.nc"); n_z = load("04_zero_co2.nc")
+    all_c = set()
     data = {}
-    for label, n in [("Baseline", n_base), ("Zero CO₂", n_co2)]:
+    for lbl, n in [("Baseline", n_b), ("Zero CO₂", n_z)]:
         caps, stor = get_caps(n)
-        combined = pd.concat([caps, stor]); combined = combined[combined > 0.01]
-        data[label] = combined; all_carriers |= set(combined.index)
-    all_carriers = sorted(all_carriers)
-    df = pd.DataFrame({l: [data[l].get(c,0) for c in all_carriers]
-                       for l in data}, index=all_carriers)
+        comb = pd.concat([caps, stor]); comb = comb[comb > 0.01]
+        data[lbl] = comb; all_c |= set(comb.index)
+    all_c = sorted(all_c)
+    df = pd.DataFrame({l: [data[l].get(c, 0) for c in all_c]
+                       for l in data}, index=all_c)
     df = df[df.sum(axis=1) > 0.01]
 
     fig, ax = plt.subplots(figsize=(14, 7))
@@ -251,442 +227,540 @@ def plot_02_capacities():
            color=[color(c) for c in df.index], alpha=0.5, edgecolor="white")
     ax.bar(x + w/2, df["Zero CO₂"], w, label="Zero CO₂",
            color=[color(c) for c in df.index], alpha=1.0, edgecolor="white")
-    ax.set_xticks(x); ax.set_xticklabels(df.index, rotation=35, ha="right", fontsize=11)
-    ax.set_ylabel("Capacity (GW)", fontsize=12)
+    ax.set_xticks(x); ax.set_xticklabels(df.index, rotation=35, ha="right")
+    ax.set_ylabel("Capacity (GW)"); ax.legend(fontsize=12)
     ax.set_title("Denmark – Installed Capacities: Baseline vs Zero CO₂",
                  fontsize=14, fontweight="bold")
-    ax.legend(fontsize=12); ax.grid(alpha=0.3, axis="y")
+    ax.grid(alpha=0.3, axis="y")
     plt.tight_layout()
-    save(fig, "02_capacities_baseline_vs_zero_co2")
+    save(fig, "02_capacities_comparison")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 03: Grid Sensitivity
+# PLOT 03: Annual Generation + Demand
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_03_grid():
-    print("\n[03] Grid Sensitivity")
+def plot_03():
+    print("\n[03] Annual Generation + Demand")
+    fig, axes = plt.subplots(2, 1, figsize=(20, 12), sharex=True)
+    for ax, (fname, label) in zip(axes, [
+            ("02_baseline.nc", "Baseline"),
+            ("04_zero_co2.nc", "Zero CO₂")]):
+        try: n = load(fname)
+        except: continue
+        gen_t = n.generators_t.p.copy()
+        gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
+        gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
+        gw = gen_t.resample("W").mean()
+        lw = n.loads_t.p_set.sum(axis=1).resample("W").mean() / 1e3
+        bot = pd.Series(0.0, index=gw.index)
+        for car in gw.columns:
+            if gw[car].sum() > 0:
+                ax.fill_between(gw.index, bot, bot + gw[car],
+                                label=car, color=color(car), alpha=0.85)
+                bot += gw[car]
+        lw.plot(ax=ax, color="black", lw=2.5, label="Demand", zorder=10, ls="--")
+        ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
+        ax.set_title(label, fontweight="bold", fontsize=13)
+        ax.legend(loc="upper left", fontsize=10, ncol=5, framealpha=0.9)
+        ax.grid(alpha=0.2)
+    fig.suptitle("Denmark – Annual Generation & Demand: Baseline vs Zero CO₂",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "03_annual_generation_demand")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 04: Capacity Factors per Region (Solar + Wind)
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_04():
+    print("\n[04] Capacity Factors per Region")
+    n = load("04_zero_co2.nc")
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+    titles = {"solar": "Solar PV", "onshore_wind": "Onshore Wind", "offshore_wind": "Offshore Wind"}
+
+    for ax, (carrier, title) in zip(axes, titles.items()):
+        gens = [g for g in n.generators.index
+                if n.generators.at[g, "carrier"] == carrier
+                and g in n.generators_t.p_max_pu.columns]
+        if not gens:
+            ax.text(0.5, 0.5, f"No data for {title}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=12)
+            ax.set_title(title, fontweight="bold"); continue
+
+        cf_data = {}
+        for g in gens:
+            bus = n.generators.at[g, "bus"]
+            cf_monthly = n.generators_t.p_max_pu[g].resample("ME").mean()
+            cf_data[bus] = cf_monthly
+
+        df = pd.DataFrame(cf_data)
+        df.index = df.index.strftime("%b")
+        df.plot(ax=ax, marker="o", markersize=5, linewidth=1.8)
+        ax.set_title(f"{title}\nMonthly avg. capacity factor", fontweight="bold")
+        ax.set_ylabel("Capacity Factor"); ax.set_xlabel("")
+        ax.legend(title="Region", fontsize=9, loc="best")
+        ax.grid(alpha=0.3)
+        ax.set_ylim(0, 1)
+        ax.tick_params(axis="x", rotation=45)
+
+    fig.suptitle("Denmark – Capacity Factors by Region: Solar & Wind",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "04_capacity_factors_per_region")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 05: CO2 Shadow Price across scenarios
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_05():
+    print("\n[05] CO2 Shadow Price")
+    co2_files = {
+        0:   "50_co2_reduction_0pct.nc",
+        20:  "51_co2_reduction_20pct.nc",
+        40:  "52_co2_reduction_40pct.nc",
+        60:  "53_co2_reduction_60pct.nc",
+        80:  "54_co2_reduction_80pct.nc",
+        95:  "55_co2_reduction_95pct.nc",
+        100: "56_co2_reduction_100pct.nc",
+    }
+    pcts, shadow_prices, costs = [], [], []
+    for pct, fname in sorted(co2_files.items()):
+        try:
+            n = load(fname)
+            obj = get_obj(n)
+            if obj is None: continue
+            # Get CO2 shadow price from global constraint dual
+            if "co2_limit" in n.global_constraints.index:
+                mu = n.global_constraints.at["co2_limit", "mu"]
+            else:
+                mu = 0.0
+            pcts.append(pct); shadow_prices.append(abs(mu)); costs.append(obj)
+        except Exception as e:
+            print(f"    ⚠ {fname}: {e}")
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    ax = axes[0]
+    # Check if we have any non-zero shadow prices
+    nonzero = [(p, sp) for p, sp in zip(pcts, shadow_prices) if sp > 0]
+    if nonzero:
+        # Use log scale if values span many orders of magnitude
+        bars = ax.bar(pcts, shadow_prices, color=COLORS["coal"], edgecolor="white", width=12)
+        if max(shadow_prices) / max(0.01, min(sp for sp in shadow_prices if sp > 0)) > 100:
+            ax.set_yscale("log")
+            ax.set_ylabel("CO₂ Shadow Price (€/tCO₂, log scale)", fontsize=12)
+        else:
+            ax.set_ylabel("CO₂ Shadow Price (€/tCO₂)", fontsize=12)
+        for bar, val in zip(bars, shadow_prices):
+            if val > 0:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() * 1.05,
+                        f"{val:.0f}", ha="center", fontsize=9)
+    else:
+        # Shadow prices not stored — show marginal cost proxy instead
+        # Use system cost difference as marginal abatement cost proxy
+        if len(pcts) >= 2 and len(costs) >= 2:
+            mac = []
+            for i in range(1, len(pcts)):
+                delta_co2_pct = pcts[i] - pcts[i-1]
+                delta_cost    = (costs[i] - costs[i-1]) * 1e9  # B€ → €
+                # rough CO2 in baseline (from first scenario coal generation)
+                try:
+                    n0 = load(co2_files[pcts[0]])
+                    w0 = n0.snapshot_weightings.generators
+                    coal_gen = sum(
+                        (n0.generators_t.p[g] * w0).sum()
+                        for g in n0.generators.index
+                        if n0.generators.at[g, "carrier"] == "coal"
+                    )  # MWh
+                    baseline_co2_t = coal_gen * 0.34  # tCO2/MWh_th approx
+                    delta_co2_t = baseline_co2_t * delta_co2_pct / 100
+                    mac.append(delta_cost / max(delta_co2_t, 1))
+                except:
+                    mac.append(0)
+            mid_pcts = [(pcts[i]+pcts[i-1])/2 for i in range(1, len(pcts))]
+            ax.bar(mid_pcts, mac, color=COLORS["coal"], edgecolor="white", width=12)
+            ax.set_ylabel("Marginal Abatement Cost (€/tCO₂, approx.)", fontsize=11)
+        else:
+            ax.text(0.5, 0.5, "Shadow price not stored\nin network files",
+                    transform=ax.transAxes, ha="center", va="center", fontsize=12,
+                    bbox=dict(boxstyle="round", facecolor="#fff3cd", alpha=0.9))
+            ax.set_ylabel("CO₂ Shadow Price (€/tCO₂)", fontsize=12)
+
+    ax.set_xlabel("CO₂ Reduction (%)", fontsize=12)
+    ax.set_title("CO₂ Shadow / Marginal Abatement Cost", fontweight="bold")
+    ax.grid(alpha=0.3, axis="y")
+
+    ax = axes[1]
+    ax.plot(pcts, costs, "o-", color="#d94801", lw=2.5, markersize=9,
+            markeredgecolor="black")
+    ax.set_xlabel("CO₂ Reduction (%)", fontsize=12)
+    ax.set_ylabel("Total System Cost (B€/year)", fontsize=12)
+    ax.set_title("System Cost vs CO₂ Reduction Target", fontweight="bold")
+    ax.grid(alpha=0.3)
+    for x, y in zip(pcts, costs):
+        ax.annotate(f"{y:.1f}", (x, y), textcoords="offset points",
+                    xytext=(0, 10), fontsize=9, ha="center")
+
+    fig.suptitle("Denmark – CO₂ Shadow Price & System Cost",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "05_co2_shadow_price")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 06: Price Duration Curve
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_06():
+    print("\n[06] Price Duration Curve")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    for ax, (fname, label, c) in zip(axes, [
+            ("02_baseline.nc", "Baseline", "#252525"),
+            ("04_zero_co2.nc", "Zero CO₂", "#2171b5")]):
+        try: n = load(fname)
+        except: continue
+        if not hasattr(n.buses_t, "marginal_price") or n.buses_t.marginal_price.empty:
+            ax.text(0.5, 0.5, "No marginal price data available",
+                    transform=ax.transAxes, ha="center", va="center", fontsize=11)
+            ax.set_title(f"Price Duration Curve – {label}", fontweight="bold"); continue
+
+        prices = n.buses_t.marginal_price
+        duration = np.linspace(0, 100, len(prices))
+        for col in prices.columns:
+            sorted_p = np.sort(prices[col].values)[::-1]
+            # Clip extreme outliers to 99th percentile for readability
+            p99 = np.percentile(sorted_p, 99)
+            p01 = np.percentile(sorted_p, 1)
+            sorted_p_clipped = np.clip(sorted_p, p01, p99)
+            ax.plot(duration, sorted_p_clipped, linewidth=1.5, alpha=0.8, label=col)
+        ax.set_xlabel("% of time", fontsize=12)
+        ax.set_ylabel("Electricity Price (€/MWh)", fontsize=12)
+        ax.set_title(f"Price Duration Curve – {label}\n(clipped to 1st–99th percentile)",
+                     fontweight="bold")
+        ax.legend(title="Region", fontsize=9, loc="upper right")
+        ax.set_xlim(0, 100); ax.grid(alpha=0.3)
+        ax.axhline(y=0, color="red", lw=0.8, ls="--", alpha=0.5, label="Zero price")
+
+    fig.suptitle("Denmark – Price Duration Curves: Baseline vs Zero CO₂",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "06_price_duration_curve")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 07: Grid Sensitivity
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_07():
+    print("\n[07] Grid Sensitivity")
     scenarios = {"Full expansion": "05_grid_full_expansion.nc",
                  "Max 1 GW/line": "06_grid_max_1GW.nc",
                  "Autarky":       "07_grid_autarky.nc"}
     costs = {}; mixes = {}
-    for label, fname in scenarios.items():
+    for lbl, f in scenarios.items():
         try:
-            n = load(fname); obj = get_objective(n)
-            if obj: costs[label] = obj
-            mixes[label] = gen_mix(n)
+            n = load(f); obj = get_obj(n)
+            if obj: costs[lbl] = obj
+            mixes[lbl] = gen_mix(n)
         except: pass
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     ax = axes[0]
     s = pd.Series(costs).dropna()
     bars = ax.bar(s.index, s.values,
-                  color=["#2171b5","#74c476","#d94801"][:len(s)], edgecolor="white")
+                  color=["#2171b5", "#74c476", "#d94801"][:len(s)], edgecolor="white")
     for bar, val in zip(bars, s.values):
-        ax.text(bar.get_x()+bar.get_width()/2, bar.get_height()+0.05,
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
                 f"{val:.2f}B€", ha="center", fontsize=11)
-    ax.set_ylabel("System Cost (B€/year)", fontsize=12)
-    ax.set_title("System Cost by Grid Scenario", fontweight="bold")
+    ax.set_ylabel("System Cost (B€/year)"); ax.set_title("System Cost", fontweight="bold")
     ax.grid(alpha=0.3, axis="y")
-    plt.setp(ax.get_xticklabels(), rotation=15, ha="right", fontsize=11)
+    plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
 
     ax = axes[1]
     all_c = sorted(set().union(*[m.index for m in mixes.values()]))
-    df = pd.DataFrame({l: [mixes[l].get(c,0) for c in all_c]
+    df = pd.DataFrame({l: [mixes[l].get(c, 0) for c in all_c]
                        for l in mixes}, index=all_c)
     df = df[df.sum(axis=1) > 0]
-    bottom = np.zeros(len(mixes))
-    for carrier in df.index:
-        ax.bar(list(mixes.keys()), df.loc[carrier].values, bottom=bottom,
-               label=carrier, color=color(carrier), edgecolor="white")
-        bottom += df.loc[carrier].values
-    ax.set_ylabel("Annual Generation (TWh)", fontsize=12)
-    ax.set_title("Generation Mix by Grid Scenario", fontweight="bold")
-    ax.legend(loc="upper right", fontsize=10)
-    plt.setp(ax.get_xticklabels(), rotation=15, ha="right", fontsize=11)
+    bot = np.zeros(len(mixes))
+    for car in df.index:
+        ax.bar(list(mixes.keys()), df.loc[car].values, bottom=bot,
+               label=car, color=color(car), edgecolor="white")
+        bot += df.loc[car].values
+    ax.set_ylabel("Annual Generation (TWh)"); ax.set_title("Generation Mix", fontweight="bold")
+    ax.legend(loc="upper right", fontsize=9)
+    plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
     fig.suptitle("Denmark – Grid Expansion Sensitivity", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    save(fig, "03_grid_sensitivity")
+    save(fig, "07_grid_sensitivity")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 03b: Annual Generation + Demand — BIGGER fonts
+# HELPER: Sensitivity with background bars
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_03b_annual():
-    print("\n[03b] Annual Generation + Demand")
-    fig, axes = plt.subplots(2, 1, figsize=(20, 14), sharex=True)
-    for ax, (fname, label) in zip(axes, [
-            ("02_baseline.nc", "Baseline"), ("04_zero_co2.nc", "Zero CO₂")]):
-        try: n = load(fname)
-        except: continue
-        gen_t = n.generators_t.p.copy()
-        gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
-        gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
-        gen_weekly = gen_t.resample("W").mean()
-        load_ts = n.loads_t.p_set.sum(axis=1) / 1e3
-        load_weekly = load_ts.resample("W").mean()
-        bottom = pd.Series(0.0, index=gen_weekly.index)
-        for carrier in gen_weekly.columns:
-            if gen_weekly[carrier].sum() > 0:
-                ax.fill_between(gen_weekly.index, bottom,
-                                bottom + gen_weekly[carrier],
-                                label=carrier, color=color(carrier), alpha=0.85)
-                bottom += gen_weekly[carrier]
-        load_weekly.plot(ax=ax, color="black", linewidth=2.5,
-                         label="Demand", zorder=10, linestyle="--")
-        ax.set_ylabel("Power (GW, weekly avg)", fontsize=13)
-        ax.set_title(f"{label}", fontweight="bold", fontsize=14)
-        ax.legend(loc="upper left", fontsize=11, ncol=5,
-                  framealpha=0.9, edgecolor="grey")
-        ax.grid(alpha=0.2)
-        ax.tick_params(labelsize=11)
-    fig.suptitle("Denmark – Annual Generation & Demand: Baseline vs Zero CO₂\n"
-                 "(Weekly averages)", fontsize=15, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "03b_annual_generation_demand")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPER: Sensitivity plot with background bars
-# ═══════════════════════════════════════════════════════════════════════════════
-def plot_sensitivity_with_bars(title, fname_prefix, files, vary_carrier,
-                                bg_carriers, x_label, invert_x=True):
-    valid_pcts, costs, caps_list, stor_list, nets = safe_sensitivity_data(files)
-    if not valid_pcts: print(f"  No data for {title}"); return
+def sens_plot(title, fname, files, vary, bg, xlabel, invert=True):
+    vp, costs, caps_l, stor_l, _ = safe_load(files)
+    if not vp: print(f"  No data for {title}"); return
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-
     ax = axes[0]
-    vc = color(vary_carrier)
-    ax.plot(valid_pcts, costs, "o-", color=vc, linewidth=2.5,
-            markersize=9, markeredgecolor="black")
-    ax.set_xlabel(x_label, fontsize=12)
-    ax.set_ylabel("System Cost (B€/year)", fontsize=12)
+    vc = color(vary)
+    ax.plot(vp, costs, "o-", color=vc, lw=2.5, markersize=9, markeredgecolor="black")
+    ax.set_xlabel(xlabel, fontsize=12); ax.set_ylabel("System Cost (B€/year)", fontsize=12)
     ax.set_title("System Cost", fontweight="bold")
-    if invert_x: ax.invert_xaxis()
+    if invert: ax.invert_xaxis()
     ax.grid(alpha=0.3)
-    for x, y in zip(valid_pcts, costs):
-        ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                    xytext=(0,10), fontsize=10, ha="center")
+    for x, y in zip(vp, costs):
+        ax.annotate(f"{y:.1f}", (x, y), textcoords="offset points",
+                    xytext=(0, 10), fontsize=9, ha="center")
 
     ax = axes[1]
-    x_pos = np.arange(len(valid_pcts))
-    bw = 0.15
-    offsets = np.linspace(-bw*len(bg_carriers)/2, bw*len(bg_carriers)/2, len(bg_carriers))
-    for i, bgc in enumerate(bg_carriers):
-        bg_vals = [caps.get(bgc, stor.get(bgc, 0))
-                   for caps, stor in zip(caps_list, stor_list)]
-        ax.bar(x_pos + offsets[i], bg_vals, bw,
-               color=color(bgc), alpha=0.4,
-               label=f"{bgc} (bars)", edgecolor="white")
-    vary_vals = [caps.get(vary_carrier, stor.get(vary_carrier, 0))
-                 for caps, stor in zip(caps_list, stor_list)]
-    ax.plot(x_pos, vary_vals, "o-", color=vc, linewidth=2.5,
-            markersize=9, markeredgecolor="black",
-            label=f"{vary_carrier} (line)", zorder=10)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([f"{p}%" for p in valid_pcts], fontsize=11)
-    ax.set_xlabel(x_label, fontsize=12)
-    ax.set_ylabel("Installed Capacity (GW)", fontsize=12)
-    ax.set_title("Varied (line) + Others (bars)", fontweight="bold")
-    ax.legend(fontsize=10, ncol=2, loc="best")
-    ax.grid(alpha=0.3, axis="y")
+    xp = np.arange(len(vp)); bw = 0.15
+    offs = np.linspace(-bw*len(bg)/2, bw*len(bg)/2, len(bg))
+    for i, bgc in enumerate(bg):
+        bgv = [c.get(bgc, s.get(bgc, 0)) for c, s in zip(caps_l, stor_l)]
+        ax.bar(xp + offs[i], bgv, bw, color=color(bgc), alpha=0.4,
+               label=f"{bgc}", edgecolor="white")
+    vv = [c.get(vary, s.get(vary, 0)) for c, s in zip(caps_l, stor_l)]
+    ax.plot(xp, vv, "o-", color=vc, lw=2.5, markersize=9,
+            markeredgecolor="black", label=f"{vary} (line)", zorder=10)
+    ax.set_xticks(xp); ax.set_xticklabels([f"{p}%" for p in vp])
+    ax.set_xlabel(xlabel, fontsize=12); ax.set_ylabel("Capacity (GW)", fontsize=12)
+    ax.set_title("Varied technology (line) + Others (bars)", fontweight="bold")
+    ax.legend(fontsize=9, ncol=2); ax.grid(alpha=0.3, axis="y")
 
     fig.suptitle(f"Denmark – {title}", fontsize=14, fontweight="bold")
     plt.tight_layout()
-    save(fig, fname_prefix)
+    save(fig, fname)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOTS 04–06, 11, 12
+# PLOTS 08–12: CAPEX Sensitivities
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_04_solar_capex():
-    print("\n[04] Solar CAPEX")
-    plot_sensitivity_with_bars(
-        "Solar CAPEX Sensitivity", "04_solar_capex_sensitivity",
-        {100:"08_solar_capex_100pct.nc", 75:"09_solar_capex_75pct.nc",
-         50:"10_solar_capex_50pct.nc",   25:"11_solar_capex_25pct.nc",
-         0:"12_solar_capex_0pct.nc"},
-        "solar", ["onshore_wind","offshore_wind","battery"], "Solar CAPEX (% of base)")
+def plot_08(): print("\n[08] Solar CAPEX"); sens_plot(
+    "Solar CAPEX Sensitivity", "08_solar_capex",
+    {100:"08_solar_capex_100pct.nc", 75:"09_solar_capex_75pct.nc",
+     50:"10_solar_capex_50pct.nc", 25:"11_solar_capex_25pct.nc", 0:"12_solar_capex_0pct.nc"},
+    "solar", ["onshore_wind","offshore_wind","battery"], "Solar CAPEX (% of base)")
 
-def plot_05_wind_capex():
-    print("\n[05] Wind CAPEX")
+def plot_09():
+    print("\n[09] Wind CAPEX")
     files = {100:"13_wind_capex_100pct.nc", 75:"14_wind_capex_75pct.nc",
-             50:"15_wind_capex_50pct.nc",   25:"16_wind_capex_25pct.nc",
-             0:"17_wind_capex_0pct.nc"}
-    valid_pcts, costs, caps_list, stor_list, _ = safe_sensitivity_data(files)
-    if not valid_pcts: return
-
+             50:"15_wind_capex_50pct.nc", 25:"16_wind_capex_25pct.nc", 0:"17_wind_capex_0pct.nc"}
+    vp, costs, caps_l, stor_l, _ = safe_load(files)
+    if not vp: return
     fig, axes = plt.subplots(1, 2, figsize=(18, 7))
     ax = axes[0]
-    ax.plot(valid_pcts, costs, "o-", color=COLORS["onshore_wind"],
-            linewidth=2.5, markersize=9, markeredgecolor="black")
-    ax.set_xlabel("Wind CAPEX (% of base)", fontsize=12)
-    ax.set_ylabel("System Cost (B€/year)", fontsize=12)
+    ax.plot(vp, costs, "o-", color=COLORS["onshore_wind"], lw=2.5, markersize=9,
+            markeredgecolor="black")
+    ax.set_xlabel("Wind CAPEX (% of base)"); ax.set_ylabel("System Cost (B€/year)")
     ax.set_title("System Cost vs Wind CAPEX", fontweight="bold")
     ax.invert_xaxis(); ax.grid(alpha=0.3)
-    for x, y in zip(valid_pcts, costs):
+    for x, y in zip(vp, costs):
         ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                    xytext=(0,10), fontsize=10, ha="center")
-
+                    xytext=(0,10), fontsize=9, ha="center")
     ax = axes[1]
-    x_pos = np.arange(len(valid_pcts))
-    solar    = [c.get("solar",0)          for c in caps_list]
-    onshore  = [c.get("onshore_wind",0)   for c in caps_list]
-    offshore = [c.get("offshore_wind",0)  for c in caps_list]
-    bat      = [s.get("battery",0)        for s in stor_list]
-    w = 0.2
-    ax.bar(x_pos - 1.5*w, solar, w, color=COLORS["solar"],   alpha=0.4, label="Solar (bars)",   edgecolor="white")
-    ax.bar(x_pos - 0.5*w, bat,   w, color=COLORS["battery"], alpha=0.4, label="Battery (bars)", edgecolor="white")
-    ax.plot(x_pos, onshore,  "o-", color=COLORS["onshore_wind"],  linewidth=2.5, markersize=8, label="Onshore Wind")
-    ax.plot(x_pos, offshore, "s-", color=COLORS["offshore_wind"], linewidth=2.5, markersize=8, label="Offshore Wind")
-    ax.set_xticks(x_pos); ax.set_xticklabels([f"{p}%" for p in valid_pcts], fontsize=11)
-    ax.set_xlabel("Wind CAPEX (% of base)", fontsize=12)
-    ax.set_ylabel("Installed Capacity (GW)", fontsize=12)
+    xp = np.arange(len(vp)); w = 0.2
+    solar = [c.get("solar",0) for c in caps_l]
+    on  = [c.get("onshore_wind",0) for c in caps_l]
+    off = [c.get("offshore_wind",0) for c in caps_l]
+    bat = [s.get("battery",0) for s in stor_l]
+    ax.bar(xp-1.5*w, solar, w, color=COLORS["solar"],   alpha=0.4, label="Solar",   edgecolor="white")
+    ax.bar(xp-0.5*w, bat,   w, color=COLORS["battery"], alpha=0.4, label="Battery", edgecolor="white")
+    ax.plot(xp, on,  "o-", color=COLORS["onshore_wind"],  lw=2.5, markersize=8, label="Onshore Wind")
+    ax.plot(xp, off, "s-", color=COLORS["offshore_wind"], lw=2.5, markersize=8, label="Offshore Wind")
+    ax.set_xticks(xp); ax.set_xticklabels([f"{p}%" for p in vp])
+    ax.set_xlabel("Wind CAPEX (% of base)"); ax.set_ylabel("Capacity (GW)")
     ax.set_title("Wind (lines) + Others (bars)", fontweight="bold")
-    ax.legend(fontsize=10); ax.grid(alpha=0.3, axis="y")
-
+    ax.legend(fontsize=9); ax.grid(alpha=0.3, axis="y")
     fig.suptitle("Denmark – Wind CAPEX Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "05_wind_capex_sensitivity")
+    plt.tight_layout(); save(fig, "09_wind_capex")
 
-def plot_06_battery_capex():
-    print("\n[06] Battery CAPEX")
+def plot_10():
+    print("\n[10] Battery CAPEX")
     files = {100:"18_battery_capex_100pct.nc", 75:"19_battery_capex_75pct.nc",
-             50:"20_battery_capex_50pct.nc",   25:"21_battery_capex_25pct.nc",
-             0:"22_battery_capex_0pct.nc"}
-    valid_pcts, costs, caps_list, stor_list, _ = safe_sensitivity_data(files)
-    if not valid_pcts: return
-
+             50:"20_battery_capex_50pct.nc", 25:"21_battery_capex_25pct.nc", 0:"22_battery_capex_0pct.nc"}
+    vp, costs, caps_l, stor_l, _ = safe_load(files)
+    if not vp: return
     fig, axes = plt.subplots(1, 2, figsize=(18, 7))
     ax = axes[0]
-    ax.plot(valid_pcts, costs, "o-", color=COLORS["battery"],
-            linewidth=2.5, markersize=9, markeredgecolor="black")
-    ax.set_xlabel("Battery CAPEX (% of base)", fontsize=12)
-    ax.set_ylabel("System Cost (B€/year)", fontsize=12)
+    ax.plot(vp, costs, "o-", color=COLORS["battery"], lw=2.5, markersize=9,
+            markeredgecolor="black")
+    ax.set_xlabel("Battery CAPEX (% of base)"); ax.set_ylabel("System Cost (B€/year)")
     ax.set_title("System Cost vs Battery CAPEX", fontweight="bold")
     ax.invert_xaxis(); ax.grid(alpha=0.3)
-    for x, y in zip(valid_pcts, costs):
+    for x, y in zip(vp, costs):
         ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                    xytext=(0,10), fontsize=10, ha="center")
-
+                    xytext=(0,10), fontsize=9, ha="center")
     ax = axes[1]
-    x_pos = np.arange(len(valid_pcts))
-    bat   = [s.get("battery",0)  for s in stor_list]
-    hyd   = [s.get("hydrogen",0) for s in stor_list]
-    wind  = [c.get("onshore_wind",0)+c.get("offshore_wind",0) for c in caps_list]
-    solar = [c.get("solar",0)    for c in caps_list]
-    w = 0.2
-    ax.bar(x_pos - 0.5*w, wind,  w, color=COLORS["onshore_wind"], alpha=0.4, label="Wind (bars)",  edgecolor="white")
-    ax.bar(x_pos + 0.5*w, solar, w, color=COLORS["solar"],        alpha=0.4, label="Solar (bars)", edgecolor="white")
-    ax.plot(x_pos, bat, "o-", color=COLORS["battery"],  linewidth=2.5, markersize=8, label="Battery")
-    ax.plot(x_pos, hyd, "s-", color=COLORS["hydrogen"], linewidth=2.5, markersize=8, label="Hydrogen")
-    ax.set_xticks(x_pos); ax.set_xticklabels([f"{p}%" for p in valid_pcts], fontsize=11)
-    ax.set_xlabel("Battery CAPEX (% of base)", fontsize=12)
-    ax.set_ylabel("Installed Capacity (GW)", fontsize=12)
+    xp = np.arange(len(vp)); w = 0.2
+    bat = [s.get("battery",0) for s in stor_l]
+    hyd = [s.get("hydrogen",0) for s in stor_l]
+    wnd = [c.get("onshore_wind",0)+c.get("offshore_wind",0) for c in caps_l]
+    sol = [c.get("solar",0) for c in caps_l]
+    ax.bar(xp-0.5*w, wnd, w, color=COLORS["onshore_wind"], alpha=0.4, label="Wind",  edgecolor="white")
+    ax.bar(xp+0.5*w, sol, w, color=COLORS["solar"],        alpha=0.4, label="Solar", edgecolor="white")
+    ax.plot(xp, bat, "o-", color=COLORS["battery"],  lw=2.5, markersize=8, label="Battery")
+    ax.plot(xp, hyd, "s-", color=COLORS["hydrogen"], lw=2.5, markersize=8, label="Hydrogen")
+    ax.set_xticks(xp); ax.set_xticklabels([f"{p}%" for p in vp])
+    ax.set_xlabel("Battery CAPEX (% of base)"); ax.set_ylabel("Capacity (GW)")
     ax.set_title("Storage (lines) + Renewables (bars)", fontweight="bold")
-    ax.legend(fontsize=10); ax.grid(alpha=0.3, axis="y")
-
+    ax.legend(fontsize=9); ax.grid(alpha=0.3, axis="y")
     fig.suptitle("Denmark – Battery CAPEX Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "06_battery_capex_sensitivity")
+    plt.tight_layout(); save(fig, "10_battery_capex")
 
-def plot_07_transmission_capex():
-    print("\n[07] Transmission CAPEX")
+def plot_11():
+    print("\n[11] Transmission CAPEX")
     files = {100:"23_transmission_capex_100pct.nc", 75:"24_transmission_capex_75pct.nc",
-             50:"25_transmission_capex_50pct.nc",   25:"26_transmission_capex_25pct.nc",
+             50:"25_transmission_capex_50pct.nc", 25:"26_transmission_capex_25pct.nc",
              0:"27_transmission_capex_0pct.nc"}
-    valid_pcts, costs, _, _, nets = safe_sensitivity_data(files)
+    vp, costs, _, _, nets = safe_load(files)
     trans = [n.links["p_nom_opt"].sum()/1e3 for n in nets]
-
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    for ax, y_vals, ylabel, title in zip(
-            axes,
-            [costs, trans],
-            ["System Cost (B€/year)", "Total Transmission (GW)"],
-            ["System Cost vs Transmission CAPEX", "Transmission Capacity vs CAPEX"]):
-        ax.plot(valid_pcts, y_vals, "o-", color=COLORS["transmission"],
-                linewidth=2.5, markersize=9, markeredgecolor="black")
-        ax.set_xlabel("Transmission CAPEX (% of base)", fontsize=12)
-        ax.set_ylabel(ylabel, fontsize=12)
-        ax.set_title(title, fontweight="bold")
-        ax.invert_xaxis(); ax.grid(alpha=0.3)
-        for x, y in zip(valid_pcts, y_vals):
+    for ax, yv, yl, t in zip(axes, [costs, trans],
+                              ["System Cost (B€/year)", "Transmission Capacity (GW)"],
+                              ["System Cost", "Transmission Capacity"]):
+        ax.plot(vp, yv, "o-", color=COLORS["transmission"], lw=2.5, markersize=9,
+                markeredgecolor="black")
+        ax.set_xlabel("Transmission CAPEX (% of base)"); ax.set_ylabel(yl)
+        ax.set_title(t, fontweight="bold"); ax.invert_xaxis(); ax.grid(alpha=0.3)
+        for x, y in zip(vp, yv):
             ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                        xytext=(0,10), fontsize=10, ha="center")
+                        xytext=(0,10), fontsize=9, ha="center")
     fig.suptitle("Denmark – Transmission CAPEX Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "07_transmission_capex_sensitivity")
+    plt.tight_layout(); save(fig, "11_transmission_capex")
 
-def plot_08_nuclear():
-    print("\n[08] Nuclear Sensitivity")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOTS 12–13: Potential Sensitivities
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_12(): print("\n[12] Solar Potential"); sens_plot(
+    "Solar Potential Sensitivity", "12_solar_potential",
+    {100:"31_solar_potential_100pct.nc", 75:"32_solar_potential_75pct.nc",
+     50:"33_solar_potential_50pct.nc", 25:"34_solar_potential_25pct.nc", 0:"35_solar_potential_0pct.nc"},
+    "solar", ["onshore_wind","offshore_wind","battery"], "Solar Potential (% of max)")
+
+def plot_13(): print("\n[13] Onshore Wind Potential"); sens_plot(
+    "Onshore Wind Potential Sensitivity", "13_onshore_potential",
+    {100:"36_onshore_potential_100pct.nc", 75:"42_onshore_potential_75pct.nc",
+     50:"43_onshore_potential_50pct.nc", 25:"44_onshore_potential_25pct.nc", 0:"45_onshore_potential_0pct.nc"},
+    "onshore_wind", ["solar","offshore_wind","battery"], "Onshore Wind Potential (% of max)")
+
+def plot_14():
+    print("\n[14] All Renewables Potential")
+    files = {100:"37_all_ren_potential_100pct.nc", 75:"38_all_ren_potential_75pct.nc",
+             50:"39_all_ren_potential_50pct.nc", 25:"40_all_ren_potential_25pct.nc", 0:"41_all_ren_potential_0pct.nc"}
+    vp, costs, caps_l, stor_l, _ = safe_load(files)
+    if not vp: return
+    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+    ax = axes[0]
+    ax.plot(vp, costs, "o-", color="#41ab5d", lw=2.5, markersize=9, markeredgecolor="black")
+    ax.set_xlabel("All Renewables Potential (% of max)"); ax.set_ylabel("System Cost (B€/year)")
+    ax.set_title("System Cost", fontweight="bold"); ax.invert_xaxis(); ax.grid(alpha=0.3)
+    for x, y in zip(vp, costs):
+        ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
+                    xytext=(0,10), fontsize=9, ha="center")
+    ax = axes[1]
+    xp = np.arange(len(vp)); w = 0.2
+    sol = [c.get("solar",0) for c in caps_l]
+    wnd = [c.get("onshore_wind",0)+c.get("offshore_wind",0) for c in caps_l]
+    bat = [s.get("battery",0) for s in stor_l]
+    hyd = [s.get("hydrogen",0) for s in stor_l]
+    ax.bar(xp-0.5*w, bat, w, color=COLORS["battery"],  alpha=0.4, label="Battery",  edgecolor="white")
+    ax.bar(xp+0.5*w, hyd, w, color=COLORS["hydrogen"], alpha=0.4, label="Hydrogen", edgecolor="white")
+    ax.plot(xp, sol, "o-", color=COLORS["solar"],        lw=2.5, markersize=8, label="Solar")
+    ax.plot(xp, wnd, "s-", color=COLORS["onshore_wind"], lw=2.5, markersize=8, label="Wind total")
+    ax.set_xticks(xp); ax.set_xticklabels([f"{p}%" for p in vp])
+    ax.set_xlabel("All Renewables Potential (% of max)"); ax.set_ylabel("Capacity (GW)")
+    ax.set_title("Renewables (lines) + Storage (bars)", fontweight="bold")
+    ax.legend(fontsize=9); ax.grid(alpha=0.3, axis="y")
+    fig.suptitle("Denmark – All Renewables Potential Sensitivity", fontsize=14, fontweight="bold")
+    plt.tight_layout(); save(fig, "14_all_renewables_potential")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 15: Nuclear Sensitivity
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_15():
+    print("\n[15] Nuclear Sensitivity")
     files = {2500:"27_nuclear_2500_eur_per_kw.nc", 5000:"28_nuclear_5000_eur_per_kw.nc",
              7500:"29_nuclear_7500_eur_per_kw.nc", 10000:"30_nuclear_10000_eur_per_kw.nc"}
-    prices = sorted(files.keys())
     vp, costs, nuc, solar, wind = [], [], [], [], []
-    for price in prices:
+    for p in sorted(files.keys()):
         try:
-            n = load(files[price]); obj = get_objective(n)
+            n = load(files[p]); obj = get_obj(n)
             if obj is None: continue
-            vp.append(price); costs.append(obj)
+            vp.append(p); costs.append(obj)
             caps, _ = get_caps(n)
             nuc.append(caps.get("nuclear",0)); solar.append(caps.get("solar",0))
             wind.append(caps.get("onshore_wind",0)+caps.get("offshore_wind",0))
         except: pass
-
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    axes[0].plot(vp, costs, "o-", color=COLORS["nuclear"], linewidth=2.5,
-                 markersize=9, markeredgecolor="black")
-    axes[0].set_xlabel("Nuclear CAPEX (€/kW)", fontsize=12)
-    axes[0].set_ylabel("System Cost (B€/year)", fontsize=12)
+    axes[0].plot(vp, costs, "o-", color=COLORS["nuclear"], lw=2.5, markersize=9,
+                 markeredgecolor="black")
+    axes[0].set_xlabel("Nuclear CAPEX (€/kW)"); axes[0].set_ylabel("System Cost (B€/year)")
     axes[0].set_title("System Cost vs Nuclear CAPEX", fontweight="bold"); axes[0].grid(alpha=0.3)
     axes[0].xaxis.set_major_formatter(mtick.FuncFormatter(lambda x,_: f"{int(x):,}"))
     for x, y in zip(vp, costs):
         axes[0].annotate(f"{y:.2f}", (x,y), textcoords="offset points",
-                         xytext=(0,10), fontsize=10, ha="center")
-
-    axes[1].plot(vp, nuc,   "o-", color=COLORS["nuclear"],       linewidth=2, markersize=8, label="Nuclear")
-    axes[1].plot(vp, wind,  "s-", color=COLORS["offshore_wind"], linewidth=2, markersize=8, label="Wind total")
-    axes[1].plot(vp, solar, "^-", color=COLORS["solar"],         linewidth=2, markersize=8, label="Solar")
-    axes[1].set_xlabel("Nuclear CAPEX (€/kW)", fontsize=12)
-    axes[1].set_ylabel("Installed Capacity (GW)", fontsize=12)
+                         xytext=(0,10), fontsize=9, ha="center")
+    axes[1].plot(vp, nuc,   "o-", color=COLORS["nuclear"],       lw=2, markersize=8, label="Nuclear")
+    axes[1].plot(vp, wind,  "s-", color=COLORS["offshore_wind"], lw=2, markersize=8, label="Wind total")
+    axes[1].plot(vp, solar, "^-", color=COLORS["solar"],         lw=2, markersize=8, label="Solar")
+    axes[1].set_xlabel("Nuclear CAPEX (€/kW)"); axes[1].set_ylabel("Capacity (GW)")
     axes[1].set_title("Capacity Mix vs Nuclear CAPEX", fontweight="bold")
-    axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3)
+    axes[1].legend(fontsize=10); axes[1].grid(alpha=0.3)
     axes[1].xaxis.set_major_formatter(mtick.FuncFormatter(lambda x,_: f"{int(x):,}"))
     fig.suptitle("Denmark – Nuclear CAPEX Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "08_nuclear_sensitivity")
+    plt.tight_layout(); save(fig, "15_nuclear_sensitivity")
 
-def plot_09_nuclear_grid():
-    print("\n[09] Nuclear + Grid")
-    free_f = {2500:"27_nuclear_2500_eur_per_kw.nc", 5000:"28_nuclear_5000_eur_per_kw.nc",
-              7500:"29_nuclear_7500_eur_per_kw.nc", 10000:"30_nuclear_10000_eur_per_kw.nc"}
-    grid_f = {2500:"46_nuclear_2500eurkw_grid_1GW.nc", 5000:"47_nuclear_5000eurkw_grid_1GW.nc",
-              7500:"48_nuclear_7500eurkw_grid_1GW.nc", 10000:"49_nuclear_10000eurkw_grid_1GW.nc"}
-    prices = sorted(free_f.keys())
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 16: Nuclear + Grid Combined
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_16():
+    print("\n[16] Nuclear + Grid")
+    ff = {2500:"27_nuclear_2500_eur_per_kw.nc", 5000:"28_nuclear_5000_eur_per_kw.nc",
+          7500:"29_nuclear_7500_eur_per_kw.nc", 10000:"30_nuclear_10000_eur_per_kw.nc"}
+    gf = {2500:"46_nuclear_2500eurkw_grid_1GW.nc", 5000:"47_nuclear_5000eurkw_grid_1GW.nc",
+          7500:"48_nuclear_7500eurkw_grid_1GW.nc", 10000:"49_nuclear_10000eurkw_grid_1GW.nc"}
     vp, cf, cg, nf, ng = [], [], [], [], []
-    for p in prices:
+    for p in sorted(ff.keys()):
         try:
-            n1=load(free_f[p]); n2=load(grid_f[p])
-            o1=get_objective(n1); o2=get_objective(n2)
+            n1=load(ff[p]); n2=load(gf[p])
+            o1=get_obj(n1); o2=get_obj(n2)
             if o1 is None or o2 is None: continue
             vp.append(p); cf.append(o1); cg.append(o2)
             c1,_=get_caps(n1); c2,_=get_caps(n2)
             nf.append(c1.get("nuclear",0)); ng.append(c2.get("nuclear",0))
         except: pass
-
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    axes[0].plot(vp, cf, "o-", color=COLORS["nuclear"], label="Baseline network", linewidth=2, markersize=8)
-    axes[0].plot(vp, cg, "s-", color=COLORS["battery"], label="Max 1GW/line",     linewidth=2, markersize=8)
-    axes[0].set_xlabel("Nuclear CAPEX (€/kW)", fontsize=12); axes[0].set_ylabel("System Cost (B€/year)", fontsize=12)
-    axes[0].set_title("Cost: Baseline Network vs 1GW Grid Limit", fontweight="bold")
-    axes[0].legend(fontsize=11); axes[0].grid(alpha=0.3)
+    axes[0].plot(vp, cf, "o-", color=COLORS["nuclear"], lw=2, markersize=8, label="Baseline network")
+    axes[0].plot(vp, cg, "s-", color=COLORS["battery"], lw=2, markersize=8, label="Max 1GW/line")
+    axes[0].set_xlabel("Nuclear CAPEX (€/kW)"); axes[0].set_ylabel("System Cost (B€/year)")
+    axes[0].set_title("Cost: Baseline vs 1GW Grid", fontweight="bold")
+    axes[0].legend(fontsize=10); axes[0].grid(alpha=0.3)
     axes[0].xaxis.set_major_formatter(mtick.FuncFormatter(lambda x,_: f"{int(x):,}"))
-
-    axes[1].plot(vp, nf, "o-", color=COLORS["nuclear"], label="Baseline network", linewidth=2, markersize=8)
-    axes[1].plot(vp, ng, "s-", color=COLORS["battery"], label="Max 1GW/line",     linewidth=2, markersize=8)
-    axes[1].set_xlabel("Nuclear CAPEX (€/kW)", fontsize=12); axes[1].set_ylabel("Nuclear Capacity (GW)", fontsize=12)
-    axes[1].set_title("Nuclear Capacity: Baseline vs 1GW Grid", fontweight="bold")
-    axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3)
+    axes[1].plot(vp, nf, "o-", color=COLORS["nuclear"], lw=2, markersize=8, label="Baseline network")
+    axes[1].plot(vp, ng, "s-", color=COLORS["battery"], lw=2, markersize=8, label="Max 1GW/line")
+    axes[1].set_xlabel("Nuclear CAPEX (€/kW)"); axes[1].set_ylabel("Nuclear Capacity (GW)")
+    axes[1].set_title("Nuclear Capacity", fontweight="bold")
+    axes[1].legend(fontsize=10); axes[1].grid(alpha=0.3)
     axes[1].xaxis.set_major_formatter(mtick.FuncFormatter(lambda x,_: f"{int(x):,}"))
     fig.suptitle("Denmark – Nuclear + Grid Expansion Combined", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "09_nuclear_grid_combined")
-
-def plot_10_solar_potential():
-    print("\n[10] Solar Potential")
-    files = {100:"31_solar_potential_100pct.nc", 75:"32_solar_potential_75pct.nc",
-             50:"33_solar_potential_50pct.nc",   25:"34_solar_potential_25pct.nc",
-             0:"35_solar_potential_0pct.nc"}
-    valid_pcts, costs, caps_list, stor_list, _ = safe_sensitivity_data(files)
-    solar = [c.get("solar",0)                                     for c in caps_list]
-    wind  = [c.get("onshore_wind",0)+c.get("offshore_wind",0)     for c in caps_list]
-    bat   = [s.get("battery",0)                                    for s in stor_list]
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    axes[0].plot(valid_pcts, costs, "o-", color=COLORS["solar"],
-                 linewidth=2.5, markersize=9, markeredgecolor="black")
-    axes[0].set_xlabel("Solar Potential (% of max)", fontsize=12)
-    axes[0].set_ylabel("System Cost (B€/year)", fontsize=12)
-    axes[0].set_title("System Cost vs Solar Potential", fontweight="bold")
-    axes[0].invert_xaxis(); axes[0].grid(alpha=0.3)
-    for x, y in zip(valid_pcts, costs):
-        axes[0].annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                         xytext=(0,10), fontsize=10, ha="center")
-
-    axes[1].plot(valid_pcts, solar, "o-", color=COLORS["solar"],        linewidth=2, markersize=8, label="Solar")
-    axes[1].plot(valid_pcts, wind,  "s-", color=COLORS["onshore_wind"], linewidth=2, markersize=8, label="Wind total")
-    axes[1].plot(valid_pcts, bat,   "^-", color=COLORS["battery"],      linewidth=2, markersize=8, label="Battery")
-    axes[1].set_xlabel("Solar Potential (% of max)", fontsize=12)
-    axes[1].set_ylabel("Installed Capacity (GW)", fontsize=12)
-    axes[1].set_title("Capacity Mix vs Solar Potential", fontweight="bold")
-    axes[1].legend(fontsize=11); axes[1].invert_xaxis(); axes[1].grid(alpha=0.3)
-    fig.suptitle("Denmark – Solar Potential Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "10_solar_potential_sensitivity")
-
-def plot_11_onshore_potential():
-    print("\n[11] Onshore Wind Potential")
-    plot_sensitivity_with_bars(
-        "Onshore Wind Potential Sensitivity", "11_onshore_potential_sensitivity",
-        {100:"36_onshore_potential_100pct.nc", 75:"42_onshore_potential_75pct.nc",
-         50:"43_onshore_potential_50pct.nc",   25:"44_onshore_potential_25pct.nc",
-         0:"45_onshore_potential_0pct.nc"},
-        "onshore_wind", ["solar","offshore_wind","battery"],
-        "Onshore Wind Potential (% of max)")
-
-def plot_12_all_renewables():
-    print("\n[12] All Renewables Potential")
-    files = {100:"37_all_ren_potential_100pct.nc", 75:"38_all_ren_potential_75pct.nc",
-             50:"39_all_ren_potential_50pct.nc",   25:"40_all_ren_potential_25pct.nc",
-             0:"41_all_ren_potential_0pct.nc"}
-    valid_pcts, costs, caps_list, stor_list, _ = safe_sensitivity_data(files)
-    solar = [c.get("solar",0)                                 for c in caps_list]
-    wind  = [c.get("onshore_wind",0)+c.get("offshore_wind",0) for c in caps_list]
-    bat   = [s.get("battery",0)  for s in stor_list]
-    hyd   = [s.get("hydrogen",0) for s in stor_list]
-
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    ax = axes[0]
-    ax.plot(valid_pcts, costs, "o-", color="#41ab5d",
-            linewidth=2.5, markersize=9, markeredgecolor="black")
-    ax.set_xlabel("All Renewables Potential (% of max)", fontsize=12)
-    ax.set_ylabel("System Cost (B€/year)", fontsize=12)
-    ax.set_title("System Cost vs All Renewables Potential", fontweight="bold")
-    ax.invert_xaxis(); ax.grid(alpha=0.3)
-    for x, y in zip(valid_pcts, costs):
-        ax.annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                    xytext=(0,10), fontsize=10, ha="center")
-
-    ax = axes[1]
-    x_pos = np.arange(len(valid_pcts)); w = 0.2
-    ax.bar(x_pos - 0.5*w, bat, w, color=COLORS["battery"],  alpha=0.4, label="Battery (bars)",  edgecolor="white")
-    ax.bar(x_pos + 0.5*w, hyd, w, color=COLORS["hydrogen"], alpha=0.4, label="Hydrogen (bars)", edgecolor="white")
-    ax.plot(x_pos, solar, "o-", color=COLORS["solar"],        linewidth=2.5, markersize=8, label="Solar")
-    ax.plot(x_pos, wind,  "s-", color=COLORS["onshore_wind"], linewidth=2.5, markersize=8, label="Wind total")
-    ax.set_xticks(x_pos); ax.set_xticklabels([f"{p}%" for p in valid_pcts], fontsize=11)
-    ax.set_xlabel("All Renewables Potential (% of max)", fontsize=12)
-    ax.set_ylabel("Installed Capacity (GW)", fontsize=12)
-    ax.set_title("Renewables (lines) + Storage (bars)", fontweight="bold")
-    ax.legend(fontsize=10); ax.grid(alpha=0.3, axis="y")
-    fig.suptitle("Denmark – All Renewables Potential Sensitivity", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "12_all_renewables_potential_sensitivity")
+    plt.tight_layout(); save(fig, "16_nuclear_grid_combined")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 13: CO2 Pathway — BIGGER (2 separate figures)
+# PLOT 17: CO2 Pathway (split into 2 plots)
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_13_co2_pathway():
-    print("\n[13] CO2 Pathway")
-    files = {0:"50_co2_reduction_0pct.nc",   20:"51_co2_reduction_20pct.nc",
+def plot_17():
+    print("\n[17] CO2 Pathway")
+    files = {0:"50_co2_reduction_0pct.nc", 20:"51_co2_reduction_20pct.nc",
              40:"52_co2_reduction_40pct.nc", 60:"53_co2_reduction_60pct.nc",
              80:"54_co2_reduction_80pct.nc", 95:"55_co2_reduction_95pct.nc",
              100:"56_co2_reduction_100pct.nc"}
-    pcts = sorted(files.keys())
     vp, costs, solar, wind, coal_gen, bat = [], [], [], [], [], []
-    for pct in pcts:
+    for pct in sorted(files.keys()):
         try:
-            n = load(files[pct]); obj = get_objective(n)
+            n = load(files[pct]); obj = get_obj(n)
             if obj is None: continue
             vp.append(pct); costs.append(obj)
             caps, stor = get_caps(n); mix = gen_mix(n)
@@ -695,242 +769,238 @@ def plot_13_co2_pathway():
             coal_gen.append(mix.get("coal",0)); bat.append(stor.get("battery",0))
         except: pass
 
-    # Figure 1: Cost + Coal
+    # Plot 17a: Cost + Coal
     fig, axes = plt.subplots(1, 2, figsize=(18, 8))
-    axes[0].plot(vp, costs, "o-", color="#d94801", linewidth=2.5,
-                 markersize=10, markeredgecolor="black")
-    axes[0].set_xlabel("CO₂ Reduction (%)", fontsize=13)
-    axes[0].set_ylabel("System Cost (B€/year)", fontsize=13)
-    axes[0].set_title("System Cost vs CO₂ Reduction", fontweight="bold", fontsize=13)
-    axes[0].grid(alpha=0.3)
+    axes[0].plot(vp, costs, "o-", color="#d94801", lw=2.5, markersize=10,
+                 markeredgecolor="black")
+    axes[0].set_xlabel("CO₂ Reduction (%)"); axes[0].set_ylabel("System Cost (B€/year)")
+    axes[0].set_title("System Cost vs CO₂ Reduction", fontweight="bold"); axes[0].grid(alpha=0.3)
     for x, y in zip(vp, costs):
         axes[0].annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                         xytext=(0,10), fontsize=10, ha="center")
-
-    axes[1].plot(vp, coal_gen, "o-", color=COLORS["coal"], linewidth=2.5,
-                 markersize=10, markeredgecolor="black")
-    axes[1].set_xlabel("CO₂ Reduction (%)", fontsize=13)
-    axes[1].set_ylabel("Coal Generation (TWh/year)", fontsize=13)
-    axes[1].set_title("Coal Generation vs CO₂ Reduction", fontweight="bold", fontsize=13)
-    axes[1].grid(alpha=0.3)
-
+                         xytext=(0,10), fontsize=9, ha="center")
+    axes[1].plot(vp, coal_gen, "o-", color=COLORS["coal"], lw=2.5, markersize=10,
+                 markeredgecolor="black")
+    axes[1].set_xlabel("CO₂ Reduction (%)"); axes[1].set_ylabel("Coal Generation (TWh/year)")
+    axes[1].set_title("Coal Generation vs CO₂ Reduction", fontweight="bold"); axes[1].grid(alpha=0.3)
     fig.suptitle("Denmark – CO₂ Decarbonisation Pathway (1/2): Cost & Coal",
-                 fontsize=15, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "13a_co2_reduction_cost_coal")
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout(); save(fig, "17a_co2_pathway_cost_coal")
 
-    # Figure 2: Renewables + Battery
+    # Plot 17b: Renewables + Battery
     fig, axes = plt.subplots(1, 2, figsize=(18, 8))
-    axes[0].plot(vp, solar, "o-", color=COLORS["solar"],        linewidth=2, markersize=9, label="Solar")
-    axes[0].plot(vp, wind,  "s-", color=COLORS["onshore_wind"], linewidth=2, markersize=9, label="Wind total")
-    axes[0].set_xlabel("CO₂ Reduction (%)", fontsize=13)
-    axes[0].set_ylabel("Capacity (GW)", fontsize=13)
-    axes[0].set_title("Renewable Capacity vs CO₂ Reduction", fontweight="bold", fontsize=13)
-    axes[0].legend(fontsize=12); axes[0].grid(alpha=0.3)
-
-    axes[1].plot(vp, bat, "o-", color=COLORS["battery"], linewidth=2.5,
-                 markersize=10, markeredgecolor="black")
-    axes[1].set_xlabel("CO₂ Reduction (%)", fontsize=13)
-    axes[1].set_ylabel("Battery Capacity (GW)", fontsize=13)
-    axes[1].set_title("Battery Storage vs CO₂ Reduction", fontweight="bold", fontsize=13)
-    axes[1].grid(alpha=0.3)
-
+    axes[0].plot(vp, solar, "o-", color=COLORS["solar"],        lw=2, markersize=9, label="Solar")
+    axes[0].plot(vp, wind,  "s-", color=COLORS["onshore_wind"], lw=2, markersize=9, label="Wind total")
+    axes[0].set_xlabel("CO₂ Reduction (%)"); axes[0].set_ylabel("Capacity (GW)")
+    axes[0].set_title("Renewable Capacity vs CO₂ Reduction", fontweight="bold")
+    axes[0].legend(fontsize=11); axes[0].grid(alpha=0.3)
+    axes[1].plot(vp, bat, "o-", color=COLORS["battery"], lw=2.5, markersize=10,
+                 markeredgecolor="black")
+    axes[1].set_xlabel("CO₂ Reduction (%)"); axes[1].set_ylabel("Battery Capacity (GW)")
+    axes[1].set_title("Battery Storage vs CO₂ Reduction", fontweight="bold"); axes[1].grid(alpha=0.3)
     fig.suptitle("Denmark – CO₂ Decarbonisation Pathway (2/2): Capacity & Storage",
-                 fontsize=15, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "13b_co2_reduction_capacity_storage")
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout(); save(fig, "17b_co2_pathway_capacity_storage")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 14: Dispatch seasonal averages — BIGGER legend
+# PLOT 18: Dispatch seasonal averages
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_14_dispatch(filename, label):
-    print(f"\n[14] Dispatch – {label}")
-    n = load(filename)
+def plot_18(fname, label):
+    print(f"\n[18] Dispatch – {label}")
+    n = load(fname)
     fig, axes = plt.subplots(2, 1, figsize=(18, 12), sharey=True)
-
-    seasons = {
-        "Winter (Dec–Feb)": ("2012-12-01", "2013-02-28"),
-        "Summer (Jun–Aug)": ("2012-06-01", "2012-08-31"),
-    }
-    all_carriers = set()
-    season_data  = {}
-    for season, (start, end) in seasons.items():
-        snap = n.snapshots[(n.snapshots >= start) & (n.snapshots <= end)]
-        if len(snap) == 0:
-            snap = n.snapshots[(n.snapshots >= start[:7])][:1000]
+    seasons = {"Winter (Dec–Feb)": ("2012-12-01","2013-02-28"),
+               "Summer (Jun–Aug)": ("2012-06-01","2012-08-31")}
+    all_c = set(); sd = {}
+    for s, (st, en) in seasons.items():
+        snap = n.snapshots[(n.snapshots >= st) & (n.snapshots <= en)]
+        if len(snap) == 0: snap = n.snapshots[:1000]
         gen_t = n.generators_t.p.loc[snap].copy()
         gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
         gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
-        gen_avg  = gen_t.groupby(gen_t.index.hour).mean()
-        load_ts  = n.loads_t.p_set.loc[snap].sum(axis=1) / 1e3
-        load_avg = load_ts.groupby(load_ts.index.hour).mean()
-        season_data[season] = (gen_avg, load_avg)
-        all_carriers |= set(gen_avg.columns)
+        ga = gen_t.groupby(gen_t.index.hour).mean()
+        la = n.loads_t.p_set.loc[snap].sum(axis=1).groupby(
+            n.loads_t.p_set.loc[snap].index.hour).mean() / 1e3
+        sd[s] = (ga, la); all_c |= set(ga.columns)
 
-    y_max = max(
-        max(ga.sum(axis=1).max(), la.max())
-        for ga, la in season_data.values()
-    ) * 1.12
-
-    for ax, (season, (gen_avg, load_avg)) in zip(axes, season_data.items()):
-        bottom = pd.Series(0.0, index=gen_avg.index)
-        for carrier in all_carriers:
-            if carrier in gen_avg.columns and gen_avg[carrier].sum() > 0:
-                ax.fill_between(gen_avg.index, bottom,
-                                bottom + gen_avg[carrier],
-                                label=carrier, color=color(carrier), alpha=0.85)
-                bottom += gen_avg[carrier]
-        load_avg.plot(ax=ax, color="black", linewidth=2.5,
-                      label="Demand", zorder=10, linestyle="--")
-        ax.set_title(f"{season}", fontweight="bold", fontsize=13)
-        ax.set_ylabel("Average Power (GW)", fontsize=12)
-        ax.set_xlabel("Hour of Day", fontsize=12)
-        ax.set_ylim(0, y_max)
-        ax.set_xticks(range(0, 24, 2))
-        ax.tick_params(labelsize=11)
-        ax.grid(alpha=0.2)
-
+    ym = max(max(ga.sum(axis=1).max(), la.max()) for ga, la in sd.values()) * 1.12
+    for ax, (s, (ga, la)) in zip(axes, sd.items()):
+        bot = pd.Series(0.0, index=ga.index)
+        for car in all_c:
+            if car in ga.columns and ga[car].sum() > 0:
+                ax.fill_between(ga.index, bot, bot+ga[car],
+                                label=car, color=color(car), alpha=0.85)
+                bot += ga[car]
+        la.plot(ax=ax, color="black", lw=2.5, label="Demand", zorder=10, ls="--")
+        ax.set_title(s, fontweight="bold", fontsize=13)
+        ax.set_ylabel("Average Power (GW)"); ax.set_xlabel("Hour of Day")
+        ax.set_ylim(0, ym); ax.set_xticks(range(0, 24, 2)); ax.grid(alpha=0.2)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper right", fontsize=11, ncol=2,
+    fig.legend(handles, labels, loc="upper right", fontsize=10, ncol=2,
                bbox_to_anchor=(0.99, 0.98), framealpha=0.9)
-    fig.suptitle(f"Denmark – Average Daily Dispatch: {label}\n"
-                 "(Seasonal averages — Winter Dec–Feb, Summer Jun–Aug)",
+    fig.suptitle(f"Denmark – Average Daily Dispatch: {label}",
                  fontsize=14, fontweight="bold")
     plt.tight_layout(rect=[0, 0, 0.87, 1])
-    safe_label = label.lower().replace(" ", "_").replace("₂", "2")
-    save(fig, f"14_dispatch_seasonal_{safe_label}")
+    save(fig, f"18_dispatch_{label.lower().replace(' ','_').replace('₂','2')}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 15: Storage + Wind/Solar generation — with legend, explain empty baseline
+# PLOT 19: Storage + Wind/Solar generation
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_15_storage(filename, label):
-    print(f"\n[15] Storage – {label}")
-    n = load(filename)
-
-    # Wind and solar generation (weekly avg)
+def plot_19(fname, label):
+    print(f"\n[19] Storage – {label}")
+    n = load(fname)
     freq = "W"
-    wind_gen  = pd.Series(0.0, index=n.snapshots)
-    solar_gen = pd.Series(0.0, index=n.snapshots)
-    for gen in n.generators.index:
-        carrier = n.generators.at[gen, "carrier"]
-        if "wind"  in carrier: wind_gen  += n.generators_t.p[gen]
-        elif "solar" in carrier: solar_gen += n.generators_t.p[gen]
-    wind_weekly  = wind_gen.resample(freq).mean()  / 1e3
-    solar_weekly = solar_gen.resample(freq).mean() / 1e3
+    wg = pd.Series(0.0, index=n.snapshots)
+    sg = pd.Series(0.0, index=n.snapshots)
+    for g in n.generators.index:
+        car = n.generators.at[g, "carrier"]
+        if "wind" in car: wg += n.generators_t.p[g]
+        elif "solar" in car: sg += n.generators_t.p[g]
+    ww = wg.resample(freq).mean() / 1e3
+    sw = sg.resample(freq).mean() / 1e3
 
-    # Storage SOC
-    if n.storage_units_t.state_of_charge.empty:
-        bat_soc = pd.Series(0.0, index=wind_weekly.index)
-        hyd_soc = pd.Series(0.0, index=wind_weekly.index)
-        no_storage = True
-    else:
-        soc      = n.storage_units_t.state_of_charge
-        bat_cols = [c for c in soc.columns if "battery"  in c.lower()]
-        hyd_cols = [c for c in soc.columns if "hydrogen" in c.lower()]
-        bat_soc  = soc[bat_cols].sum(axis=1).resample(freq).mean()/1e3 if bat_cols else pd.Series(0.0, index=wind_weekly.index)
-        hyd_soc  = soc[hyd_cols].sum(axis=1).resample(freq).mean()/1e3 if hyd_cols else pd.Series(0.0, index=wind_weekly.index)
-        no_storage = bat_soc.max() < 0.01 and hyd_soc.max() < 0.01
+    fig, axes = plt.subplots(3, 1, figsize=(18, 13), sharex=True)
 
-    fig, axes = plt.subplots(3, 1, figsize=(18, 14), sharex=True)
-
-    # Panel 1: Wind + Solar
+    # Wind + Solar
     ax = axes[0]
-    ax.fill_between(wind_weekly.index,  wind_weekly,  color=COLORS["onshore_wind"], alpha=0.7, label="Wind total")
-    ax.fill_between(solar_weekly.index, solar_weekly, color=COLORS["solar"],        alpha=0.7, label="Solar")
-    ax.set_ylabel("Generation (GW, weekly avg)", fontsize=12)
-    ax.set_title("Wind & Solar Generation", fontweight="bold", fontsize=13)
-    ax.legend(loc="upper right", fontsize=12, framealpha=0.9)
-    ax.grid(alpha=0.3); ax.tick_params(labelsize=11)
+    ax.fill_between(ww.index, ww, color=COLORS["onshore_wind"], alpha=0.7, label="Wind total")
+    ax.fill_between(sw.index, sw, color=COLORS["solar"],        alpha=0.7, label="Solar")
+    ax.set_ylabel("Generation (GW, weekly avg)")
+    ax.set_title("Wind & Solar Generation", fontweight="bold")
+    ax.legend(loc="upper right", fontsize=11, framealpha=0.9); ax.grid(alpha=0.3)
 
-    # Panel 2: Battery
+    # Battery SOC
     ax = axes[1]
-    if no_storage and "baseline" in label.lower():
-        ax.text(0.5, 0.5, "Battery storage not used in Baseline\n"
-                "(Coal provides all balancing — storage has no economic role)",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=12, color=COLORS["battery"],
-                bbox=dict(boxstyle="round", facecolor="#fff3cd", alpha=0.8))
-    else:
-        bat_soc.plot(ax=ax, color=COLORS["battery"], linewidth=1.5, label="Battery SOC")
-        ax.fill_between(bat_soc.index, bat_soc, alpha=0.3, color=COLORS["battery"])
-        ax.legend(loc="upper right", fontsize=12, framealpha=0.9)
-    ax.set_ylabel("GWh (weekly avg)", fontsize=12)
-    ax.set_title("Battery Storage – State of Charge", fontweight="bold", fontsize=13)
-    ax.grid(alpha=0.3); ax.tick_params(labelsize=11)
+    if not n.storage_units_t.state_of_charge.empty:
+        soc = n.storage_units_t.state_of_charge
+        bc = [c for c in soc.columns if "battery" in c.lower()]
+        if bc:
+            bs = soc[bc].sum(axis=1).resample(freq).mean() / 1e3
+            bs.plot(ax=ax, color=COLORS["battery"], lw=1.5, label="Battery SOC")
+            ax.fill_between(bs.index, bs, alpha=0.3, color=COLORS["battery"])
+            ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+        else:
+            ax.text(0.5, 0.5, "Battery not used (coal provides balancing)",
+                    transform=ax.transAxes, ha="center", va="center", fontsize=11,
+                    bbox=dict(boxstyle="round", facecolor="#fff3cd", alpha=0.8))
+    ax.set_ylabel("GWh (weekly avg)")
+    ax.set_title("Battery Storage – State of Charge", fontweight="bold"); ax.grid(alpha=0.3)
 
-    # Panel 3: Hydrogen
+    # Hydrogen SOC
     ax = axes[2]
-    if no_storage and "baseline" in label.lower():
-        ax.text(0.5, 0.5, "Hydrogen storage not used in Baseline\n"
-                "(Coal eliminates the need for seasonal storage entirely)",
-                transform=ax.transAxes, ha="center", va="center",
-                fontsize=12, color=COLORS["hydrogen"],
-                bbox=dict(boxstyle="round", facecolor="#f0e6ff", alpha=0.8))
-    else:
-        hyd_soc.plot(ax=ax, color=COLORS["hydrogen"], linewidth=1.5, label="Hydrogen SOC")
-        ax.fill_between(hyd_soc.index, hyd_soc, alpha=0.3, color=COLORS["hydrogen"])
-        ax.legend(loc="upper right", fontsize=12, framealpha=0.9)
-    ax.set_ylabel("GWh (weekly avg)", fontsize=12)
-    ax.set_title("Hydrogen Storage – State of Charge", fontweight="bold", fontsize=13)
-    ax.grid(alpha=0.3); ax.tick_params(labelsize=11)
+    if not n.storage_units_t.state_of_charge.empty:
+        soc = n.storage_units_t.state_of_charge
+        hc = [c for c in soc.columns if "hydrogen" in c.lower()]
+        if hc:
+            hs = soc[hc].sum(axis=1).resample(freq).mean() / 1e3
+            hs.plot(ax=ax, color=COLORS["hydrogen"], lw=1.5, label="Hydrogen SOC")
+            ax.fill_between(hs.index, hs, alpha=0.3, color=COLORS["hydrogen"])
+            ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+        else:
+            ax.text(0.5, 0.5, "Hydrogen not used (coal eliminates seasonal storage need)",
+                    transform=ax.transAxes, ha="center", va="center", fontsize=11,
+                    bbox=dict(boxstyle="round", facecolor="#f0e6ff", alpha=0.8))
+    ax.set_ylabel("GWh (weekly avg)")
+    ax.set_title("Hydrogen Storage – State of Charge", fontweight="bold"); ax.grid(alpha=0.3)
 
     fig.suptitle(f"Denmark – Generation & Storage Levels: {label}",
-                 fontsize=15, fontweight="bold")
+                 fontsize=14, fontweight="bold")
     plt.tight_layout()
-    safe_label = label.lower().replace(" ", "_").replace("₂","2")
-    save(fig, f"15_storage_{safe_label}")
+    save(fig, f"19_storage_{label.lower().replace(' ','_').replace('₂','2')}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 16: Cost Summary — logically grouped, descending within groups
+# PLOT 20: Curtailment Rate
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_16_cost_summary():
-    print("\n[16] Cost Summary")
+def plot_20():
+    print("\n[20] Curtailment Rate")
+    scenarios = {"Baseline": "02_baseline.nc", "Zero CO₂": "04_zero_co2.nc"}
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    for ax, (label, fname) in zip(axes, scenarios.items()):
+        try: n = load(fname)
+        except: continue
+        w = n.snapshot_weightings.generators
+        curtailment = {}
+        for g in n.generators.index:
+            car = n.generators.at[g, "carrier"]
+            if car not in ["solar", "onshore_wind", "offshore_wind"]: continue
+            if g not in n.generators_t.p_max_pu.columns: continue
+            p_nom = n.generators.at[g, "p_nom_opt"]
+            if p_nom == 0:
+                p_nom = n.generators.at[g, "p_nom"]
+            if p_nom == 0: continue
+            potential = (n.generators_t.p_max_pu[g] * p_nom * w).sum()
+            actual    = (n.generators_t.p[g] * w).sum() if g in n.generators_t.p.columns else 0
+            curt = max(0, potential - actual)
+            if curt > 0:
+                curtailment[car] = curtailment.get(car, 0) + curt / 1e6  # TWh
 
-    # Grouped logically: Reference first, then sensitivities by category
+        if not curtailment:
+            ax.text(0.5, 0.5, "No curtailment detected\n(all potential generation was used)",
+                    transform=ax.transAxes, ha="center", va="center", fontsize=11,
+                    bbox=dict(boxstyle="round", facecolor="#e5f5e0", alpha=0.9))
+            ax.set_title(f"Curtailment – {label}", fontweight="bold"); continue
+
+        cs = pd.Series(curtailment).sort_values(ascending=False)
+        bars = ax.bar(cs.index, cs.values,
+                      color=[color(c) for c in cs.index], edgecolor="white")
+        for bar, val in zip(bars, cs.values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                    f"{val:.2f} TWh", ha="center", fontsize=10)
+        ax.set_ylabel("Curtailed Energy (TWh/year)")
+        ax.set_title(f"Curtailment – {label}", fontweight="bold")
+        ax.grid(alpha=0.3, axis="y")
+
+    fig.suptitle("Denmark – Renewable Curtailment: Baseline vs Zero CO₂",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "20_curtailment_rate")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLOT 21: Cost Summary — logically grouped
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_21():
+    print("\n[21] Cost Summary")
     groups = [
-        ("── Reference ──────────────────────────────────────", None, None),
-        ("Baseline",          "02_baseline.nc",                  "#636363"),
-        ("Zero CO₂",          "04_zero_co2.nc",                  "#41ab5d"),
-        ("── Grid Sensitivity ───────────────────────────────", None, None),
-        ("Grid – Full expand","05_grid_full_expansion.nc",       "#2171b5"),
-        ("Grid – 1GW/line",   "06_grid_max_1GW.nc",             "#6baed6"),
-        ("Grid – Autarky",    "07_grid_autarky.nc",             "#d94801"),
-        ("── Solar CAPEX ────────────────────────────────────", None, None),
-        ("Solar CAPEX 100%",  "08_solar_capex_100pct.nc",       "#f9d71c"),
-        ("Solar CAPEX 50%",   "10_solar_capex_50pct.nc",        "#f9d71c"),
-        ("Solar CAPEX 0%",    "12_solar_capex_0pct.nc",         "#f9d71c"),
-        ("── Wind CAPEX ─────────────────────────────────────", None, None),
-        ("Wind CAPEX 100%",   "13_wind_capex_100pct.nc",        "#74c476"),
-        ("Wind CAPEX 50%",    "15_wind_capex_50pct.nc",         "#74c476"),
-        ("Wind CAPEX 0%",     "17_wind_capex_0pct.nc",          "#74c476"),
-        ("── Battery CAPEX ──────────────────────────────────", None, None),
-        ("Battery 100%",      "18_battery_capex_100pct.nc",     "#d94801"),
-        ("Battery 0%",        "22_battery_capex_0pct.nc",       "#d94801"),
-        ("── Nuclear ────────────────────────────────────────", None, None),
-        ("Nuclear 2,500 €/kW","27_nuclear_2500_eur_per_kw.nc",  "#a1d99b"),
-        ("Nuclear 5,000 €/kW","28_nuclear_5000_eur_per_kw.nc",  "#a1d99b"),
+        ("── Reference ──────────────", None, None),
+        ("Baseline",           "02_baseline.nc",                "#636363"),
+        ("Zero CO₂",           "04_zero_co2.nc",                "#41ab5d"),
+        ("── Grid ───────────────────", None, None),
+        ("Grid – Full",        "05_grid_full_expansion.nc",     "#2171b5"),
+        ("Grid – 1GW/line",    "06_grid_max_1GW.nc",           "#6baed6"),
+        ("Grid – Autarky",     "07_grid_autarky.nc",           "#d94801"),
+        ("── Solar CAPEX ────────────", None, None),
+        ("Solar CAPEX 100%",   "08_solar_capex_100pct.nc",     "#f9d71c"),
+        ("Solar CAPEX 50%",    "10_solar_capex_50pct.nc",      "#f9d71c"),
+        ("Solar CAPEX 0%",     "12_solar_capex_0pct.nc",       "#f9d71c"),
+        ("── Wind CAPEX ─────────────", None, None),
+        ("Wind CAPEX 100%",    "13_wind_capex_100pct.nc",      "#74c476"),
+        ("Wind CAPEX 50%",     "15_wind_capex_50pct.nc",       "#74c476"),
+        ("Wind CAPEX 0%",      "17_wind_capex_0pct.nc",        "#74c476"),
+        ("── Battery CAPEX ──────────", None, None),
+        ("Battery 100%",       "18_battery_capex_100pct.nc",   "#d94801"),
+        ("Battery 0%",         "22_battery_capex_0pct.nc",     "#d94801"),
+        ("── Nuclear ────────────────", None, None),
+        ("Nuclear 2,500 €/kW", "27_nuclear_2500_eur_per_kw.nc","#a1d99b"),
         ("Nuclear 10,000 €/kW","30_nuclear_10000_eur_per_kw.nc","#a1d99b"),
-        ("── CO₂ Pathway ────────────────────────────────────", None, None),
-        ("CO₂ reduction 0%",  "50_co2_reduction_0pct.nc",       "#41ab5d"),
-        ("CO₂ reduction 20%", "51_co2_reduction_20pct.nc",      "#41ab5d"),
-        ("CO₂ reduction 60%", "53_co2_reduction_60pct.nc",      "#41ab5d"),
-        ("CO₂ reduction 95%", "55_co2_reduction_95pct.nc",      "#41ab5d"),
-        ("CO₂ reduction 100%","56_co2_reduction_100pct.nc",     "#41ab5d"),
+        ("── CO₂ Pathway ────────────", None, None),
+        ("CO₂ –0%",            "50_co2_reduction_0pct.nc",     "#41ab5d"),
+        ("CO₂ –20%",           "51_co2_reduction_20pct.nc",    "#41ab5d"),
+        ("CO₂ –60%",           "53_co2_reduction_60pct.nc",    "#41ab5d"),
+        ("CO₂ –95%",           "55_co2_reduction_95pct.nc",    "#41ab5d"),
+        ("CO₂ –100%",          "56_co2_reduction_100pct.nc",   "#41ab5d"),
     ]
-
     labels, values, clrs = [], [], []
-    for label, fname, clr in groups:
+    for lbl, fname, clr in groups:
         if fname is None:
-            # Section divider — add as empty bar
-            labels.append(label); values.append(0); clrs.append("white")
+            labels.append(lbl); values.append(0); clrs.append("white")
             continue
         try:
-            n = load(fname); obj = get_objective(n)
+            obj = get_obj(load(fname))
             if obj is not None:
-                labels.append(label); values.append(obj); clrs.append(clr)
+                labels.append(lbl); values.append(obj); clrs.append(clr)
         except: pass
 
     fig, ax = plt.subplots(figsize=(16, 13))
@@ -938,119 +1008,57 @@ def plot_16_cost_summary():
     for bar, val, lbl in zip(bars, values, labels):
         if val > 0:
             ax.text(val + 0.05, bar.get_y() + bar.get_height()/2,
-                    f"{val:.2f} B€", va="center", fontsize=10)
+                    f"{val:.2f} B€", va="center", fontsize=9)
         if val == 0 and "──" in lbl:
             ax.axhline(y=bar.get_y() + bar.get_height()/2,
-                       color="#cccccc", linewidth=0.8, linestyle="--")
-
-    ax.set_xlabel("Total System Cost (Billion €/year)", fontsize=13)
-    ax.set_title("Denmark – System Cost Overview: All Scenarios\n"
-                 "Grouped by scenario category",
-                 fontsize=14, fontweight="bold")
-    ax.grid(alpha=0.3, axis="x")
-    ax.invert_yaxis()
-    ax.tick_params(labelsize=10)
+                       color="#dddddd", lw=0.8, ls="--")
+    ax.set_xlabel("Total System Cost (Billion €/year)", fontsize=12)
+    ax.set_title("Denmark – System Cost: All Scenarios (grouped by category)",
+                 fontsize=13, fontweight="bold")
+    ax.grid(alpha=0.3, axis="x"); ax.invert_yaxis()
     ax.set_xlim(0, max(v for v in values if v > 0) * 1.15)
     plt.tight_layout()
-    save(fig, "16_cost_summary_descending")
+    save(fig, "21_cost_summary")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 17: Weather Years (if available)
+# PLOT 22: Tech Years sensitivity
 # ═══════════════════════════════════════════════════════════════════════════════
-def plot_17_weather_years():
-    print("\n[17] Weather Years")
-    year_files = {}
-    for year in [2012, 2013, 2014]:
-        for fname in [f"61_weather_year_{year}.nc", f"weather_year_{year}.nc"]:
-            try: load(fname); year_files[year] = fname; break
-            except: pass
-    if len(year_files) < 2:
-        print("  Not enough weather year scenarios — skipping"); return
-
-    years = sorted(year_files.keys())
-    costs, solar, wind, bat = [], [], [], []
-    for yr in years:
-        n = load(year_files[yr]); obj = get_objective(n)
-        if obj is None: continue
-        costs.append(obj)
-        caps, stor = get_caps(n)
-        solar.append(caps.get("solar",0))
-        wind.append(caps.get("onshore_wind",0)+caps.get("offshore_wind",0))
-        bat.append(stor.get("battery",0))
+def plot_22():
+    print("\n[22] Tech Years")
+    year_map = {2020:"66_tech_year_2020.nc", 2025:"67_tech_year_2025.nc",
+                2030:"68_tech_year_2030.nc", 2040:"69_tech_year_2040.nc",
+                2050:"70_tech_year_2050.nc"}
+    yrs, costs, solar, wind, bat = [], [], [], [], []
+    for yr, fname in sorted(year_map.items()):
+        try:
+            n = load(fname); obj = get_obj(n)
+            if obj is None: continue
+            yrs.append(yr); costs.append(obj)
+            caps, stor = get_caps(n)
+            solar.append(caps.get("solar",0))
+            wind.append(caps.get("onshore_wind",0)+caps.get("offshore_wind",0))
+            bat.append(stor.get("battery",0))
+        except: pass
+    if len(yrs) < 2: print("  Not enough data — skipping"); return
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    axes[0].bar(years, costs,
-                color=[COLORS["offshore_wind"],COLORS["onshore_wind"],COLORS["solar"]][:len(years)],
-                edgecolor="white")
-    for yr, c in zip(years, costs):
-        axes[0].text(yr, c+0.02, f"{c:.2f}B€", ha="center", fontsize=11)
-    axes[0].set_xlabel("Weather Year", fontsize=12); axes[0].set_ylabel("System Cost (B€/year)", fontsize=12)
-    axes[0].set_title("System Cost by Weather Year", fontweight="bold"); axes[0].grid(alpha=0.3, axis="y")
-
-    x = np.arange(len(years)); w = 0.25
-    axes[1].bar(x-w,   solar, w, color=COLORS["solar"],        label="Solar",      edgecolor="white")
-    axes[1].bar(x,     wind,  w, color=COLORS["onshore_wind"], label="Wind total", edgecolor="white")
-    axes[1].bar(x+w,   bat,   w, color=COLORS["battery"],      label="Battery",    edgecolor="white")
-    axes[1].set_xticks(x); axes[1].set_xticklabels(years, fontsize=11)
-    axes[1].set_xlabel("Weather Year", fontsize=12); axes[1].set_ylabel("Installed Capacity (GW)", fontsize=12)
-    axes[1].set_title("Capacity Mix by Weather Year", fontweight="bold")
-    axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3, axis="y")
-
-    fig.suptitle("Denmark – Sensitivity 5: Weather Year Variations", fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "17_sensitivity_weather_years")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PLOT 18: Tech Years
-# ═══════════════════════════════════════════════════════════════════════════════
-def plot_18_tech_years():
-    print("\n[18] Tech Years")
-    tech_years = [2020, 2025, 2030, 2040, 2050]
-    year_files = {}
-    for yr in tech_years:
-        for fname in [f"66_tech_year_{yr}.nc", f"67_tech_year_{yr}.nc",
-                      f"68_tech_year_{yr}.nc", f"69_tech_year_{yr}.nc",
-                      f"70_tech_year_{yr}.nc"]:
-            try: load(fname); year_files[yr] = fname; break
-            except: pass
-    if len(year_files) < 2:
-        print("  Not enough tech year scenarios — skipping"); return
-
-    years = sorted(year_files.keys())
-    costs, solar, wind, bat = [], [], [], []
-    for yr in years:
-        n = load(year_files[yr]); obj = get_objective(n)
-        if obj is None: continue
-        costs.append(obj)
-        caps, stor = get_caps(n)
-        solar.append(caps.get("solar",0))
-        wind.append(caps.get("onshore_wind",0)+caps.get("offshore_wind",0))
-        bat.append(stor.get("battery",0))
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    axes[0].plot(years, costs, "o-", color=COLORS["offshore_wind"],
-                 linewidth=2.5, markersize=9, markeredgecolor="black")
-    axes[0].set_xlabel("Technology Cost Year", fontsize=12)
-    axes[0].set_ylabel("System Cost (B€/year)", fontsize=12)
+    axes[0].plot(yrs, costs, "o-", color=COLORS["offshore_wind"], lw=2.5,
+                 markersize=9, markeredgecolor="black")
+    axes[0].set_xlabel("Technology Cost Year"); axes[0].set_ylabel("System Cost (B€/year)")
     axes[0].set_title("System Cost vs Technology Year", fontweight="bold"); axes[0].grid(alpha=0.3)
-    for x, y in zip(years, costs):
+    for x, y in zip(yrs, costs):
         axes[0].annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                         xytext=(0,10), fontsize=10, ha="center")
-
-    axes[1].plot(years, solar, "o-", color=COLORS["solar"],        linewidth=2, markersize=8, label="Solar")
-    axes[1].plot(years, wind,  "s-", color=COLORS["onshore_wind"], linewidth=2, markersize=8, label="Wind total")
-    axes[1].plot(years, bat,   "^-", color=COLORS["battery"],      linewidth=2, markersize=8, label="Battery")
-    axes[1].set_xlabel("Technology Cost Year", fontsize=12)
-    axes[1].set_ylabel("Installed Capacity (GW)", fontsize=12)
+                         xytext=(0,10), fontsize=9, ha="center")
+    axes[1].plot(yrs, solar, "o-", color=COLORS["solar"],        lw=2, markersize=8, label="Solar")
+    axes[1].plot(yrs, wind,  "s-", color=COLORS["onshore_wind"], lw=2, markersize=8, label="Wind total")
+    axes[1].plot(yrs, bat,   "^-", color=COLORS["battery"],      lw=2, markersize=8, label="Battery")
+    axes[1].set_xlabel("Technology Cost Year"); axes[1].set_ylabel("Capacity (GW)")
     axes[1].set_title("Capacity Mix vs Technology Year", fontweight="bold")
     axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3)
-
     fig.suptitle("Denmark – Sensitivity 6: Technology Cost Year Variations",
                  fontsize=14, fontweight="bold")
-    plt.tight_layout()
-    save(fig, "18_sensitivity_tech_years")
+    plt.tight_layout(); save(fig, "22_tech_years")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1061,28 +1069,32 @@ if __name__ == "__main__":
     print("Denmark Energy Model – Generating all plots")
     print("=" * 60)
 
-    plot_00_base_scenario()
-    plot_01_mix()
-    plot_02_capacities()
-    plot_03_grid()
-    plot_03b_annual()
-    plot_04_solar_capex()
-    plot_05_wind_capex()
-    plot_06_battery_capex()
-    plot_07_transmission_capex()
-    plot_08_nuclear()
-    plot_09_nuclear_grid()
-    plot_10_solar_potential()
-    plot_11_onshore_potential()
-    plot_12_all_renewables()
-    plot_13_co2_pathway()
-    plot_14_dispatch("04_zero_co2.nc",  "Zero CO2")
-    plot_14_dispatch("02_baseline.nc",  "Baseline")
-    plot_15_storage("04_zero_co2.nc",   "Zero CO2")
-    plot_15_storage("02_baseline.nc",   "Baseline")
-    plot_16_cost_summary()
-    plot_17_weather_years()
-    plot_18_tech_years()
+    plot_00a()
+    plot_00b()
+    plot_01()
+    plot_02()
+    plot_03()
+    plot_04()
+    plot_05()
+    plot_06()
+    plot_07()
+    plot_08()
+    plot_09()
+    plot_10()
+    plot_11()
+    plot_12()
+    plot_13()
+    plot_14()
+    plot_15()
+    plot_16()
+    plot_17()
+    plot_18("04_zero_co2.nc",  "Zero CO2")
+    plot_18("02_baseline.nc",  "Baseline")
+    plot_19("04_zero_co2.nc",  "Zero CO2")
+    plot_19("02_baseline.nc",  "Baseline")
+    plot_20()
+    plot_21()
+    plot_22()
 
     print("\n" + "=" * 60)
     print(f"✓ All plots saved to {OUT_DIR}/")
