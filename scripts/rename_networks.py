@@ -171,6 +171,15 @@ rename_map = {
 
 }
 
+rename_map = {
+    "denmark_basic_network_level1_2012_full_grid_expansion_tec_cost_2030.nc":
+        "71_tec_cost_2030.nc",
+    "denmark_basic_network_level1_2012_full_grid_expansion_tec_cost_2040.nc":
+        "72_tec_cost_2040.nc",
+    "denmark_basic_network_level1_2012_full_grid_expansion_tec_cost_2050.nc":
+        "73_tec_cost_2050.nc",
+}
+
 # Umbenennen
 renamed = 0
 skipped = 0

@@ -1026,9 +1026,12 @@ def plot_21():
 # ═══════════════════════════════════════════════════════════════════════════════
 def plot_22():
     print("\n[22] Tech Years")
-    year_map = {2020:"66_tech_year_2020.nc", 2025:"67_tech_year_2025.nc",
-                2030:"68_tech_year_2030.nc", 2040:"69_tech_year_2040.nc",
-                2050:"70_tech_year_2050.nc"}
+    year_map = {
+        2025: "02_baseline.nc",        # Baseline = 2025 costs
+        2030: "71_tec_cost_2030.nc",
+        2040: "72_tec_cost_2040.nc",
+        2050: "73_tec_cost_2050.nc",
+    }
     yrs, costs, solar, wind, bat = [], [], [], [], []
     for yr, fname in sorted(year_map.items()):
         try:
@@ -1036,9 +1039,9 @@ def plot_22():
             if obj is None: continue
             yrs.append(yr); costs.append(obj)
             caps, stor = get_caps(n)
-            solar.append(caps.get("solar",0))
-            wind.append(caps.get("onshore_wind",0)+caps.get("offshore_wind",0))
-            bat.append(stor.get("battery",0))
+            solar.append(caps.get("solar", 0))
+            wind.append(caps.get("onshore_wind", 0) + caps.get("offshore_wind", 0))
+            bat.append(stor.get("battery", 0))
         except: pass
     if len(yrs) < 2: print("  Not enough data — skipping"); return
 
@@ -1046,20 +1049,24 @@ def plot_22():
     axes[0].plot(yrs, costs, "o-", color=COLORS["offshore_wind"], lw=2.5,
                  markersize=9, markeredgecolor="black")
     axes[0].set_xlabel("Technology Cost Year"); axes[0].set_ylabel("System Cost (B€/year)")
-    axes[0].set_title("System Cost vs Technology Year", fontweight="bold"); axes[0].grid(alpha=0.3)
+    axes[0].set_title("System Cost vs Technology Year", fontweight="bold")
+    axes[0].grid(alpha=0.3)
     for x, y in zip(yrs, costs):
-        axes[0].annotate(f"{y:.1f}", (x,y), textcoords="offset points",
-                         xytext=(0,10), fontsize=9, ha="center")
+        axes[0].annotate(f"{y:.1f}", (x, y), textcoords="offset points",
+                         xytext=(0, 10), fontsize=9, ha="center")
+
     axes[1].plot(yrs, solar, "o-", color=COLORS["solar"],        lw=2, markersize=8, label="Solar")
     axes[1].plot(yrs, wind,  "s-", color=COLORS["onshore_wind"], lw=2, markersize=8, label="Wind total")
     axes[1].plot(yrs, bat,   "^-", color=COLORS["battery"],      lw=2, markersize=8, label="Battery")
     axes[1].set_xlabel("Technology Cost Year"); axes[1].set_ylabel("Capacity (GW)")
     axes[1].set_title("Capacity Mix vs Technology Year", fontweight="bold")
     axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3)
-    fig.suptitle("Denmark – Sensitivity 6: Technology Cost Year Variations",
-                 fontsize=14, fontweight="bold")
-    plt.tight_layout(); save(fig, "22_tech_years")
 
+    fig.suptitle("Denmark – Sensitivity 6: Technology Cost Year Variations\n"
+                 "2025 = Baseline | 2030/2040/2050 = future cost projections",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "22_tech_years")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # RUN ALL
@@ -1069,31 +1076,31 @@ if __name__ == "__main__":
     print("Denmark Energy Model – Generating all plots")
     print("=" * 60)
 
-    plot_00a()
-    plot_00b()
-    plot_01()
-    plot_02()
-    plot_03()
-    plot_04()
-    plot_05()
-    plot_06()
-    plot_07()
-    plot_08()
-    plot_09()
-    plot_10()
-    plot_11()
-    plot_12()
-    plot_13()
-    plot_14()
-    plot_15()
-    plot_16()
-    plot_17()
-    plot_18("04_zero_co2.nc",  "Zero CO2")
-    plot_18("02_baseline.nc",  "Baseline")
-    plot_19("04_zero_co2.nc",  "Zero CO2")
-    plot_19("02_baseline.nc",  "Baseline")
-    plot_20()
-    plot_21()
+    # plot_00a()
+    # plot_00b()
+    # plot_01()
+    # plot_02()
+    # plot_03()
+    # plot_04()
+    # plot_05()
+    # plot_06()
+    # plot_07()
+    # plot_08()
+    # plot_09()
+    # plot_10()
+    # plot_11()
+    # plot_12()
+    # plot_13()
+    # plot_14()
+    # plot_15()
+    # plot_16()
+    # plot_17()
+    # plot_18("04_zero_co2.nc",  "Zero CO2")
+    # plot_18("02_baseline.nc",  "Baseline")
+    # plot_19("04_zero_co2.nc",  "Zero CO2")
+    # plot_19("02_baseline.nc",  "Baseline")
+    # plot_20()
+    # plot_21()
     plot_22()
 
     print("\n" + "=" * 60)

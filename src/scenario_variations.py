@@ -241,3 +241,15 @@ def add_nuclear_generators(network, investment_eur_per_kw, config, suffix=None):
                 network.generators.loc[generator_name, key] = value
         else:
             network.add("Generator", generator_name, **generator_values)
+            
+def change_cost_prediction(file_name, scenario_name, config):
+    """Change the technology parameters file and set scenario suffix."""
+    config.update_setting("technology_parameters_file", file_name)
+    config.add_setting_name_suffix(scenario_name)
+    
+
+
+def change_weather_year(weather_year, scenario_name, config):
+    """Change the weather year and set scenario suffix."""
+    config.update_setting("weather_year", weather_year)
+    config.add_setting_name_suffix(scenario_name)
