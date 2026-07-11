@@ -434,8 +434,7 @@ def plot_06():
             ax.plot(duration, sorted_p_clipped, linewidth=1.5, alpha=0.8, label=col)
         ax.set_xlabel("% of time", fontsize=12)
         ax.set_ylabel("Electricity Price (€/MWh)", fontsize=12)
-        ax.set_title(f"Price Duration Curve – {label}\n(clipped to 1st–99th percentile)",
-                     fontweight="bold")
+        
         ax.legend(title="Region", fontsize=9, loc="upper right")
         ax.set_xlim(0, 100); ax.grid(alpha=0.3)
         ax.axhline(y=0, color="red", lw=0.8, ls="--", alpha=0.5, label="Zero price")
@@ -1058,9 +1057,18 @@ def plot_22():
     axes[1].plot(yrs, solar, "o-", color=COLORS["solar"],        lw=2, markersize=8, label="Solar")
     axes[1].plot(yrs, wind,  "s-", color=COLORS["onshore_wind"], lw=2, markersize=8, label="Wind total")
     axes[1].plot(yrs, bat,   "^-", color=COLORS["battery"],      lw=2, markersize=8, label="Battery")
-    axes[1].set_xlabel("Technology Cost Year"); axes[1].set_ylabel("Capacity (GW)")
-    axes[1].set_title("Capacity Mix vs Technology Year", fontweight="bold")
-    axes[1].legend(fontsize=11); axes[1].grid(alpha=0.3)
+    axes[1].set_xlabel("Technology Cost Year")
+    axes[1].set_ylabel("Capacity (GW)", fontsize=12)
+    axes[1].set_title("Capacity Mix + System Cost vs Technology Year", fontweight="bold")
+    axes[1].legend(fontsize=10, loc="upper left"); axes[1].grid(alpha=0.3)
+
+    # Second y-axis for costs
+    ax2 = axes[1].twinx()
+    ax2.plot(yrs, costs, "D--", color="#d94801", lw=2, markersize=8,
+             label="System Cost", alpha=0.8)
+    ax2.set_ylabel("System Cost (B€/year)", fontsize=12, color="#d94801")
+    ax2.tick_params(axis="y", labelcolor="#d94801")
+    ax2.legend(loc="upper right", fontsize=10)
 
     fig.suptitle("Denmark – Sensitivity 6: Technology Cost Year Variations\n"
                  "2025 = Baseline | 2030/2040/2050 = future cost projections",
@@ -1068,9 +1076,65 @@ def plot_22():
     plt.tight_layout()
     save(fig, "22_tech_years")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# RUN ALL
-# ═══════════════════════════════════════════════════════════════════════════════
+
+#  New Plot
+
+def plot_annual_generation_with_storage():
+    print("\n[plot] Annual Generation + Storage + Demand")
+    fig, axes = plt.subplots(2, 1, figsize=(20, 14), sharex=True)
+    for ax, (fname, label) in zip(axes, [
+            ("02_baseline.nc", "Baseline"),
+            ("04_zero_co2.nc", "Zero CO₂")]):
+        try: n = load(fname)
+        except: continue
+
+        # Generation weekly avg
+        gen_t = n.generators_t.p.copy()
+        gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
+        gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
+        gw = gen_t.resample("W").mean()
+
+        # Battery dispatch (positive = discharging)
+        bat_cols = [c for c in n.storage_units.index
+                    if "battery" in n.storage_units.at[c, "carrier"].lower()]
+        if bat_cols:
+            bat_dispatch = n.storage_units_t.p[bat_cols].sum(axis=1).resample("W").mean() / 1e3
+        else:
+            bat_dispatch = None
+
+        # Demand
+        lw = n.loads_t.p_set.sum(axis=1).resample("W").mean() / 1e3
+
+        bot = pd.Series(0.0, index=gw.index)
+        for car in gw.columns:
+            if gw[car].sum() > 0:
+                ax.fill_between(gw.index, bot, bot + gw[car],
+                                label=car, color=color(car), alpha=0.85)
+                bot += gw[car]
+
+        # Battery discharge on top
+        if bat_dispatch is not None and bat_dispatch.max() > 0:
+            ax.fill_between(gw.index,
+                            bot,
+                            bot + bat_dispatch.clip(lower=0),
+                            label="battery (discharge)",
+                            color=COLORS["battery"], alpha=0.6)
+
+        lw.plot(ax=ax, color="black", lw=2.5, label="Demand",
+                zorder=10, ls="--")
+        ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
+        ax.set_title(label, fontweight="bold", fontsize=13)
+        ax.legend(loc="upper left", fontsize=10, ncol=5, framealpha=0.9)
+        ax.grid(alpha=0.2)
+
+    fig.suptitle("Denmark – Annual Generation (incl. Battery Discharge) & Demand",
+                 fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    save(fig, "03c_annual_generation_with_battery")
+
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # RUN ALL
+# # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("=" * 60)
     print("Denmark Energy Model – Generating all plots")
@@ -1083,7 +1147,7 @@ if __name__ == "__main__":
     # plot_03()
     # plot_04()
     # plot_05()
-    # plot_06()
+    plot_06()
     # plot_07()
     # plot_08()
     # plot_09()
@@ -1102,6 +1166,7 @@ if __name__ == "__main__":
     # plot_20()
     # plot_21()
     plot_22()
+    #plot_annual_generation_with_storage()
 
     print("\n" + "=" * 60)
     print(f"✓ All plots saved to {OUT_DIR}/")
