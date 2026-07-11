@@ -152,7 +152,7 @@ def create_weather_profiles(config):
         matrix=matrix,
         index=buses,
         per_unit=True,      # --> translates values into capacity factor (0-1) instead of absolute power values
-        aggregate_time=None,
+        
     )
     solar = profile_to_dataframe(solar, config)
     save_profile(
@@ -165,7 +165,7 @@ def create_weather_profiles(config):
         matrix=matrix,
         index=buses,
         per_unit=True,
-        aggregate_time=None,
+        
     )
     onshore_wind = profile_to_dataframe(onshore_wind, config)
     save_profile(
@@ -178,7 +178,7 @@ def create_weather_profiles(config):
         matrix=offshore_matrix,
         index=offshore_buses,
         per_unit=True,
-        aggregate_time=None,
+        
     )
     offshore_wind = profile_to_dataframe(offshore_wind, config)
     save_profile(

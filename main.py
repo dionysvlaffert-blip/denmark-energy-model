@@ -274,19 +274,19 @@ def solve_and_save(network, config):
 # print_network_summary(config, model_data, network)
 # status, condition = solve_and_save(network, config)
 
-# Szeanrio for costpredictions
-cost_prediction_sz = {
-    "tec_cost_2030": "data/raw/technolgy_parameters_2030.csv",
-    "tec_cost_2040": "data/raw/technolgy_parameters_2040.csv",
-    "tec_cost_2050": "data/raw/technolgy_parameters_2050.csv",
-}
+# # Szeanrio for costpredictions
+# cost_prediction_sz = {
+#     "tec_cost_2030": "data/raw/technolgy_parameters_2030.csv",
+#     "tec_cost_2040": "data/raw/technolgy_parameters_2040.csv",
+#     "tec_cost_2050": "data/raw/technolgy_parameters_2050.csv",
+# }
 
-for scenario_suffix, cost_prediction_path in cost_prediction_sz.items():
-    config = ProjectConfig("config/project_config.yaml")
-    change_cost_prediction(file_name=cost_prediction_path, scenario_name=scenario_suffix, config=config)
-    network, model_data = build_network(config)
-    status, condition = solve_and_save(network, config)
-    print_network_summary(config, model_data, network)
+# for scenario_suffix, cost_prediction_path in cost_prediction_sz.items():
+#     config = ProjectConfig("config/project_config.yaml")
+#     change_cost_prediction(file_name=cost_prediction_path, scenario_name=scenario_suffix, config=config)
+#     network, model_data = build_network(config)
+#     status, condition = solve_and_save(network, config)
+#     print_network_summary(config, model_data, network)
 
 # Szenario for weather year
 weather_year_sz = {
@@ -295,9 +295,9 @@ weather_year_sz = {
 	"weather_year_2024": 2024,
 }
 
-for scenario_suffix, cost_prediction_path in cost_prediction_sz.items():
+for scenario_suffix, weather_year in weather_year_sz.items():
     config = ProjectConfig("config/project_config.yaml") 
-    change_cost_prediction(file_name=cost_prediction_path, scenario_name=scenario_suffix, config=config)
+    change_weather_year(weather_year=weather_year, scenario_name=scenario_suffix, config=config)
     network, model_data = build_network(config)
     status, condition = solve_and_save(network, config)
     print_network_summary(config, model_data, network)
