@@ -270,6 +270,11 @@ def plot_03():
             if gw[car].sum() > 0:
                 gw[car].plot(ax=ax, label=car, color=color(car),
                              linewidth=1.5, alpha=0.85)
+            # Gesamte Generation
+        total = gw.sum(axis=1)
+        total.plot(ax=ax, color="red", lw=2.5, label="Total Generation",
+           zorder=9, ls="-.")
+                
         lw.plot(ax=ax, color="black", lw=2.5, label="Demand",
                 zorder=10, ls="--")
         ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
@@ -1193,7 +1198,7 @@ if __name__ == "__main__":
     # plot_14()
     # plot_15()
     # plot_16()
-    plot_17()
+    # plot_17()
     # plot_18("04_zero_co2.nc",  "Zero CO2")
     # plot_18("02_baseline.nc",  "Baseline")
     # plot_19("04_zero_co2.nc",  "Zero CO2")
