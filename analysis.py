@@ -241,7 +241,7 @@ def plot_02():
 # ═══════════════════════════════════════════════════════════════════════════════
 def plot_03():
     print("\n[03] Annual Generation + Demand")
-    fig, axes = plt.subplots(2, 1, figsize=(20, 12), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(20, 14), sharex=True)
 
     for ax, (fname, label) in zip(axes, [
             ("02_baseline.nc", "Baseline"),
@@ -252,37 +252,52 @@ def plot_03():
         gen_t = n.generators_t.p.copy()
         gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
         gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
+        gw = gen_t.resample("W").mean()
+        total_gen = gw.sum(axis=1)
+        lw = n.loads_t.p_set.sum(axis=1).resample("W").mean() / 1e3
+
         if not n.storage_units_t.p.empty:
             stor_t = n.storage_units_t.p.copy()
             stor_t.columns = n.storage_units.loc[stor_t.columns, "carrier"]
             stor_t = stor_t.T.groupby(level=0).sum().T / 1e3
-            stor_t = stor_t.clip(lower=0)
-            for car in stor_t.columns:
-                if car in gen_t.columns:
-                    gen_t[car] += stor_t[car]
-                else:
-                    gen_t[car] = stor_t[car]
+            stor_w = stor_t.resample("W").mean()
+        else:
+            stor_w = pd.DataFrame()
 
-        gw = gen_t.resample("W").mean()
-        lw = n.loads_t.p_set.sum(axis=1).resample("W").mean() / 1e3
-
+        # Individual technologies first (background)
         for car in sorted(gw.columns):
             if gw[car].sum() > 0:
                 gw[car].plot(ax=ax, label=car, color=color(car),
-                             linewidth=1.5, alpha=0.85)
-            # Gesamte Generation
-        total = gw.sum(axis=1)
-        total.plot(ax=ax, color="red", lw=2.5, label="Total Generation",
-           zorder=9, ls="-.")
-                
+                             lw=1.2, alpha=0.6)
+        if not stor_w.empty:
+            for car in sorted(stor_w.columns):
+                sw = stor_w[car].clip(lower=0)
+                if sw.sum() > 0:
+                    sw.plot(ax=ax, label=car, color=color(car),
+                            lw=1.2, ls=":", alpha=0.6)
+
+        # Excess/Shortage on top
+        ax.fill_between(total_gen.index, lw, total_gen,
+                        where=(total_gen >= lw), interpolate=True,
+                        color="#2ca25f", alpha=0.4, label="Excess")
+        ax.fill_between(total_gen.index, lw, total_gen,
+                        where=(total_gen < lw), interpolate=True,
+                        color="#fd8d3c", alpha=0.4, label="Shortage")
+
+        # Total generation and demand on top
+        total_gen.plot(ax=ax, color="#d94801", lw=2.5,
+                       label="Total Generation", zorder=8)
         lw.plot(ax=ax, color="black", lw=2.5, label="Demand",
                 zorder=10, ls="--")
+
         ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
         ax.set_title(label, fontweight="bold", fontsize=13)
-        ax.legend(loc="upper left", fontsize=9, ncol=4, framealpha=0.9)
+        ax.set_ylim(bottom=0)
+        ax.legend(loc="upper left", fontsize=9, ncol=5, framealpha=0.9)
         ax.grid(alpha=0.2)
 
-    fig.suptitle("Denmark – Annual Generation by Technology & Demand",
+    fig.suptitle("Denmark – Annual Generation & Demand\n"
+                 "Green = excess | Orange = shortage",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     save(fig, "03_annual_generation_demand")
@@ -933,44 +948,66 @@ def plot_19(fname, label):
 # ═══════════════════════════════════════════════════════════════════════════════
 def plot_20():
     print("\n[20] Curtailment Rate")
-    scenarios = {"Baseline": "02_baseline.nc", "Zero CO₂": "04_zero_co2.nc"}
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-    for ax, (label, fname) in zip(axes, scenarios.items()):
-        try: n = load(fname)
-        except: continue
-        w = n.snapshot_weightings.generators
-        curtailment = {}
-        for g in n.generators.index:
-            car = n.generators.at[g, "carrier"]
-            if car not in ["solar", "onshore_wind", "offshore_wind"]: continue
-            if g not in n.generators_t.p_max_pu.columns: continue
-            p_nom = n.generators.at[g, "p_nom_opt"]
-            if p_nom == 0:
-                p_nom = n.generators.at[g, "p_nom"]
-            if p_nom == 0: continue
-            potential = (n.generators_t.p_max_pu[g] * p_nom * w).sum()
-            actual    = (n.generators_t.p[g] * w).sum() if g in n.generators_t.p.columns else 0
-            curt = max(0, potential - actual)
-            if curt > 0:
-                curtailment[car] = curtailment.get(car, 0) + curt / 1e6  # TWh
+    fig, axes = plt.subplots(2, 1, figsize=(14, 12))
 
-        if not curtailment:
-            ax.text(0.5, 0.5, "No curtailment detected\n(all potential generation was used)",
-                    transform=ax.transAxes, ha="center", va="center", fontsize=11,
-                    bbox=dict(boxstyle="round", facecolor="#e5f5e0", alpha=0.9))
-            ax.set_title(f"Curtailment – {label}", fontweight="bold"); continue
+    n = load("04_zero_co2.nc")
+    w = n.snapshot_weightings.generators
+    curtailment_ts = pd.Series(0.0, index=n.snapshots)
+    total_potential = {}
+    total_curtailed = {}
 
-        cs = pd.Series(curtailment).sort_values(ascending=False)
-        bars = ax.bar(cs.index, cs.values,
-                      color=[color(c) for c in cs.index], edgecolor="white")
-        for bar, val in zip(bars, cs.values):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                    f"{val:.2f} TWh", ha="center", fontsize=10)
-        ax.set_ylabel("Curtailed Energy (TWh/year)")
-        ax.set_title(f"Curtailment – {label}", fontweight="bold")
+    for g in n.generators.index:
+        car = n.generators.at[g, "carrier"]
+        if car not in ["solar", "onshore_wind", "offshore_wind"]: continue
+        if g not in n.generators_t.p_max_pu.columns: continue
+        p_nom = n.generators.at[g, "p_nom_opt"]
+        if p_nom == 0: p_nom = n.generators.at[g, "p_nom"]
+        if p_nom == 0: continue
+        potential = n.generators_t.p_max_pu[g] * p_nom
+        actual = n.generators_t.p[g] if g in n.generators_t.p.columns else pd.Series(0, index=n.snapshots)
+        curt = (potential - actual).clip(lower=0)
+        curtailment_ts += curt
+        total_potential[car] = total_potential.get(car, 0) + (potential * w).sum() / 1e6
+        total_curtailed[car] = total_curtailed.get(car, 0) + (curt * w).sum() / 1e6
+
+    # ── Top: Curtailment rate per technology ──────────────────────────────
+    ax = axes[0]
+    if total_curtailed:
+        techs = list(total_curtailed.keys())
+        rates = [total_curtailed[t] / max(total_potential[t], 0.001) * 100 for t in techs]
+        bars = ax.bar(techs, rates, color=[color(t) for t in techs], edgecolor="white")
+        for bar, val in zip(bars, rates):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2,
+                    f"{val:.1f}%", ha="center", fontsize=10)
+        ax.set_ylabel("Curtailment Rate (%)", fontsize=11)
+        ax.set_title("Zero CO₂ — Curtailment Rate by Technology", fontweight="bold")
         ax.grid(alpha=0.3, axis="y")
+    else:
+        ax.text(0.5, 0.5, "No curtailment detected", transform=ax.transAxes,
+                ha="center", va="center", fontsize=12,
+                bbox=dict(boxstyle="round", facecolor="#e5f5e0", alpha=0.9))
+        ax.set_title("Zero CO₂ — Curtailment Rate", fontweight="bold")
 
-    fig.suptitle("Denmark – Renewable Curtailment: Baseline vs Zero CO₂",
+    # ── Bottom: Monthly curtailment ───────────────────────────────────────
+    ax = axes[1]
+    if curtailment_ts.sum() > 0:
+        monthly = curtailment_ts.resample("ME").sum() / 1e3
+        monthly.index = monthly.index.strftime("%b")
+        ax.bar(range(len(monthly)), monthly.values,
+               color=COLORS["offshore_wind"], edgecolor="white", alpha=0.8)
+        ax.set_xticks(range(len(monthly)))
+        ax.set_xticklabels(monthly.index, fontsize=10)
+        ax.set_ylabel("Curtailed Energy (GWh)", fontsize=11)
+        ax.set_title("Zero CO₂ — Monthly Curtailment Distribution", fontweight="bold")
+        ax.grid(alpha=0.3, axis="y")
+    else:
+        ax.text(0.5, 0.5, "No curtailment detected", transform=ax.transAxes,
+                ha="center", va="center", fontsize=12,
+                bbox=dict(boxstyle="round", facecolor="#e5f5e0", alpha=0.9))
+        ax.set_title("Zero CO₂ — Monthly Curtailment", fontweight="bold")
+
+    fig.suptitle("Denmark – Renewable Curtailment Analysis: Zero CO₂\n"
+                 "Top: rate per technology | Bottom: monthly distribution",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     save(fig, "20_curtailment_rate")
@@ -1184,7 +1221,7 @@ if __name__ == "__main__":
     # plot_00b()
     # plot_01()
     # plot_02()
-    plot_03()
+    # plot_03()
     # plot_04()
     # plot_05()
     # plot_06()
@@ -1203,7 +1240,7 @@ if __name__ == "__main__":
     # plot_18("02_baseline.nc",  "Baseline")
     # plot_19("04_zero_co2.nc",  "Zero CO2")
     # plot_19("02_baseline.nc",  "Baseline")
-    # plot_20()
+    plot_20()
     #plot_21()
     #plot_22()
     #plot_annual_generation_with_storage() #03c
