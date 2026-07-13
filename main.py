@@ -1,25 +1,25 @@
-# from src.build_basic_network import save_network
-# from src.model_builder import build_network
-# from src.network_summary import print_network_summary, print_optimization_results
-# from src.project_config import ProjectConfig
-# from src.scenario_variations import (
-# 	add_co2_emissions_limit,
-# 	add_no_co2_emissions_constraint,
-# 	add_nuclear_generators,
-# 	scale_capital_cost,
-# 	scale_generator_capital_cost,
-# 	scale_link_capital_cost,
-# 	scale_renewable_potential,
-# 	scale_storage_capital_cost,
-# 	set_nuclear_capital_cost,
-# )
+from src.build_basic_network import save_network
+from src.model_builder import build_network
+from src.network_summary import print_network_summary, print_optimization_results
+from src.project_config import ProjectConfig
+from src.scenario_variations import (
+	add_co2_emissions_limit,
+	add_no_co2_emissions_constraint,
+	add_nuclear_generators,
+	scale_capital_cost,
+	scale_generator_capital_cost,
+	scale_link_capital_cost,
+	scale_renewable_potential,
+	scale_storage_capital_cost,
+	set_nuclear_capital_cost,
+)
 
-# # Ablauf:
-# # 1. Pro Szenario eine frische Config laden, damit der Dateiname sauber bleibt.
-# # 2. Netzwerk mit build_network(config) komplett aufbauen.
-# # 3. Optional eine Szenariofunktion auf network anwenden.
-# # 4. Hier spaeter den Solver laufen lassen.
-# # 5. Netzwerk mit dem aktuellen setting_name speichern.
+# Ablauf:
+# 1. Pro Szenario eine frische Config laden, damit der Dateiname sauber bleibt.
+# 2. Netzwerk mit build_network(config) komplett aufbauen.
+# 3. Optional eine Szenariofunktion auf network anwenden.
+# 4. Hier spaeter den Solver laufen lassen.
+# 5. Netzwerk mit dem aktuellen setting_name speichern.
 
 # # # Baseline scenario
 # # config = ProjectConfig("config/project_config.yaml")
@@ -176,18 +176,18 @@
 # #     print_optimization_results(network, status, condition)
 # #     save_network(network, config)
 
-# # # ── CO2 reduction steps (partial decarbonisation) ────────────────────────────
-# # for co2_reduction_pct in [0, 20, 40, 60, 80, 95, 100]:
-# #     config = ProjectConfig("config/project_config.yaml")
-# #     network, model_data = build_network(config)
-# #     # Berechne absolutes CO2 Limit basierend auf Reduktionsprozentsatz
-# #     baseline_co2 = 1e7  # Beispielwert — anpassen falls bekannt
-# #     co2_limit = baseline_co2 * (1 - co2_reduction_pct / 100)
-# #     add_co2_emissions_limit(network, co2_limit, config)
-# #     config.add_setting_name_suffix(f"co2_reduction_{co2_reduction_pct}pct")
-# #     status, condition = network.optimize(solver_name=config.solver_name)
-# #     print_optimization_results(network, status, condition)
-# #     save_network(network, config)
+# ── CO2 reduction steps (partial decarbonisation) ────────────────────────────
+for co2_reduction_pct in [0, 20, 40, 60, 80, 95, 100]:
+    config = ProjectConfig("config/project_config.yaml")
+    network, model_data = build_network(config)
+    # Berechne absolutes CO2 Limit basierend auf Reduktionsprozentsatz
+    baseline_co2 = 3.23e7  # tCO2 aus Baseline-Szenario
+    co2_limit = baseline_co2 * (1 - co2_reduction_pct / 100)
+    add_co2_emissions_limit(network, co2_limit, config)
+    config.add_setting_name_suffix(f"co2_reduction_{co2_reduction_pct}pct")
+    status, condition = network.optimize(solver_name=config.solver_name)
+    print_optimization_results(network, status, condition)
+    save_network(network, config)
 
 
 # # # ── Nuclear in Zero CO2 network ───────────────────────────────────────────────
@@ -235,23 +235,7 @@
 # #     print_optimization_results(network, status, condition)
 # #     save_network(network, config)
 
-from src.build_basic_network import save_network
-from src.model_builder import build_network
-from src.network_summary import print_network_summary, print_optimization_results
-from src.project_config import ProjectConfig
-from src.scenario_variations import (
-	add_co2_emissions_limit,
-	add_no_co2_emissions_constraint,
-	add_nuclear_generators,
-	change_cost_prediction,
-	change_weather_year,
-	scale_capital_cost,
-	scale_generator_capital_cost,
-	scale_link_capital_cost,
-	scale_renewable_potential,
-	scale_storage_capital_cost,
-	set_nuclear_capital_cost,
-)
+
 
 
 def solve_and_save(network, config):
@@ -261,18 +245,6 @@ def solve_and_save(network, config):
 	save_network(network, config)
 	return status, condition
 
-# Ablauf:
-# 1. Pro Szenario eine frische Config laden, damit der Dateiname sauber bleibt.
-# 2. Netzwerk mit build_network(config) komplett aufbauen.
-# 3. Optional eine Szenariofunktion auf network anwenden.
-# 4. Hier spaeter den Solver laufen lassen.
-# 5. Netzwerk mit dem aktuellen setting_name speichern.
-
-# # Baseline scenario
-# config = ProjectConfig("config/project_config.yaml")
-# network, model_data = build_network(config)
-# print_network_summary(config, model_data, network)
-# status, condition = solve_and_save(network, config)
 
 # # Szeanrio for costpredictions
 # cost_prediction_sz = {
@@ -288,16 +260,16 @@ def solve_and_save(network, config):
 #     status, condition = solve_and_save(network, config)
 #     print_network_summary(config, model_data, network)
 
-# Szenario for weather year
-weather_year_sz = {
-	"weather_year_2012": 2012,
-	"weather_year_2016": 2016,
-	"weather_year_2024": 2024,
-}
+# # Szenario for weather year
+# weather_year_sz = {
+# 	"weather_year_2012": 2012,
+# 	"weather_year_2016": 2016,
+# 	"weather_year_2024": 2024,
+# }
 
-for scenario_suffix, weather_year in weather_year_sz.items():
-    config = ProjectConfig("config/project_config.yaml") 
-    change_weather_year(weather_year=weather_year, scenario_name=scenario_suffix, config=config)
-    network, model_data = build_network(config)
-    status, condition = solve_and_save(network, config)
-    print_network_summary(config, model_data, network)
+# for scenario_suffix, weather_year in weather_year_sz.items():
+#     config = ProjectConfig("config/project_config.yaml") 
+#     change_weather_year(weather_year=weather_year, scenario_name=scenario_suffix, config=config)
+#     network, model_data = build_network(config)
+#     status, condition = solve_and_save(network, config)
+#     print_network_summary(config, model_data, network)

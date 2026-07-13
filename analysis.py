@@ -242,28 +242,42 @@ def plot_02():
 def plot_03():
     print("\n[03] Annual Generation + Demand")
     fig, axes = plt.subplots(2, 1, figsize=(20, 12), sharex=True)
+
     for ax, (fname, label) in zip(axes, [
             ("02_baseline.nc", "Baseline"),
             ("04_zero_co2.nc", "Zero CO₂")]):
         try: n = load(fname)
         except: continue
+
         gen_t = n.generators_t.p.copy()
         gen_t.columns = n.generators.loc[gen_t.columns, "carrier"]
         gen_t = gen_t.T.groupby(level=0).sum().T / 1e3
+        if not n.storage_units_t.p.empty:
+            stor_t = n.storage_units_t.p.copy()
+            stor_t.columns = n.storage_units.loc[stor_t.columns, "carrier"]
+            stor_t = stor_t.T.groupby(level=0).sum().T / 1e3
+            stor_t = stor_t.clip(lower=0)
+            for car in stor_t.columns:
+                if car in gen_t.columns:
+                    gen_t[car] += stor_t[car]
+                else:
+                    gen_t[car] = stor_t[car]
+
         gw = gen_t.resample("W").mean()
         lw = n.loads_t.p_set.sum(axis=1).resample("W").mean() / 1e3
-        bot = pd.Series(0.0, index=gw.index)
-        for car in gw.columns:
+
+        for car in sorted(gw.columns):
             if gw[car].sum() > 0:
-                ax.fill_between(gw.index, bot, bot + gw[car],
-                                label=car, color=color(car), alpha=0.85)
-                bot += gw[car]
-        lw.plot(ax=ax, color="black", lw=2.5, label="Demand", zorder=10, ls="--")
+                gw[car].plot(ax=ax, label=car, color=color(car),
+                             linewidth=1.5, alpha=0.85)
+        lw.plot(ax=ax, color="black", lw=2.5, label="Demand",
+                zorder=10, ls="--")
         ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
         ax.set_title(label, fontweight="bold", fontsize=13)
-        ax.legend(loc="upper left", fontsize=10, ncol=5, framealpha=0.9)
+        ax.legend(loc="upper left", fontsize=9, ncol=4, framealpha=0.9)
         ax.grid(alpha=0.2)
-    fig.suptitle("Denmark – Annual Generation & Demand: Baseline vs Zero CO₂",
+
+    fig.suptitle("Denmark – Annual Generation by Technology & Demand",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     save(fig, "03_annual_generation_demand")
@@ -991,16 +1005,37 @@ def plot_21():
         ("CO₂ –95%",           "55_co2_reduction_95pct.nc",    "#41ab5d"),
         ("CO₂ –100%",          "56_co2_reduction_100pct.nc",   "#41ab5d"),
     ]
-    labels, values, clrs = [], [], []
+
+    # Load costs and sort within each group descending
+    result = []
+    current_group = []
+    current_header = None
+
     for lbl, fname, clr in groups:
         if fname is None:
-            labels.append(lbl); values.append(0); clrs.append("white")
-            continue
-        try:
-            obj = get_obj(load(fname))
-            if obj is not None:
-                labels.append(lbl); values.append(obj); clrs.append(clr)
-        except: pass
+            # Sort previous group descending by cost before adding
+            if current_group:
+                current_group.sort(key=lambda x: x[1], reverse=True)
+                result.append((current_header[0], 0, "white"))
+                result.extend(current_group)
+            current_header = (lbl, None, None)
+            current_group = []
+        else:
+            try:
+                obj = get_obj(load(fname))
+                if obj is not None:
+                    current_group.append((lbl, obj, clr))
+            except: pass
+
+    # Add last group
+    if current_group:
+        current_group.sort(key=lambda x: x[1], reverse=True)
+        result.append((current_header[0], 0, "white"))
+        result.extend(current_group)
+
+    labels = [r[0] for r in result]
+    values = [r[1] for r in result]
+    clrs   = [r[2] for r in result]
 
     fig, ax = plt.subplots(figsize=(16, 13))
     bars = ax.barh(labels, values, color=clrs, edgecolor="white", height=0.7)
@@ -1012,7 +1047,7 @@ def plot_21():
             ax.axhline(y=bar.get_y() + bar.get_height()/2,
                        color="#dddddd", lw=0.8, ls="--")
     ax.set_xlabel("Total System Cost (Billion €/year)", fontsize=12)
-    ax.set_title("Denmark – System Cost: All Scenarios (grouped by category)",
+    ax.set_title("Denmark – System Cost: All Scenarios (grouped by category, descending within groups)",
                  fontsize=13, fontweight="bold")
     ax.grid(alpha=0.3, axis="x"); ax.invert_yaxis()
     ax.set_xlim(0, max(v for v in values if v > 0) * 1.15)
@@ -1144,10 +1179,10 @@ if __name__ == "__main__":
     # plot_00b()
     # plot_01()
     # plot_02()
-    # plot_03()
+    plot_03()
     # plot_04()
     # plot_05()
-    plot_06()
+    # plot_06()
     # plot_07()
     # plot_08()
     # plot_09()
@@ -1158,15 +1193,15 @@ if __name__ == "__main__":
     # plot_14()
     # plot_15()
     # plot_16()
-    # plot_17()
+    plot_17()
     # plot_18("04_zero_co2.nc",  "Zero CO2")
     # plot_18("02_baseline.nc",  "Baseline")
     # plot_19("04_zero_co2.nc",  "Zero CO2")
     # plot_19("02_baseline.nc",  "Baseline")
     # plot_20()
-    # plot_21()
-    plot_22()
-    #plot_annual_generation_with_storage()
+    #plot_21()
+    #plot_22()
+    #plot_annual_generation_with_storage() #03c
 
     print("\n" + "=" * 60)
     print(f"✓ All plots saved to {OUT_DIR}/")
