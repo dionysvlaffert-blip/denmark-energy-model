@@ -1,0 +1,154 @@
+from pathlib import Path
+import sys
+import matplotlib.pyplot as plt
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(PROJECT_ROOT))
+
+from src.project_config import ProjectConfig
+from src.load_profiles import load_national_load
+from scripts.weather_analysis.analysis_functions import (
+    calc_cap_fac_solar_wind,
+    calc_correlation_wind_solar,
+    calc_full_load_hours_for_year,
+    calc_mean_rolling_variance,
+    calc_residual_load,
+    calc_rolling_variances_weather,
+    count_dunkelflaute_sections,
+    load_agg_weather_dk,
+    load_model_metrics_for_year,
+    plot_compare_dunkelflaute_counts,
+    plot_compare_mean_rolling_variance_time,
+    plot_installed_capacity_and_system_cost,
+    plot_variance_vs_battery_installed,
+    plot_vs_analysis_subplots,
+)
+
+
+def run_weather_analysis_for_years(years, config):
+    load = load_national_load(config)
+    load_norm = load / load.max()
+    results = {}
+
+    for year in years:
+        print(f"\n=== Weather analysis for {year} ===")
+        try:
+            agg_weather_dk = load_agg_weather_dk(year, config)
+            print("Loaded aggregated weather profiles:", agg_weather_dk.shape)
+            agg_weather_dk["cap_factor_weather"] = calc_cap_fac_solar_wind(agg_weather_dk)
+            agg_weather_dk["residual_load"] = calc_residual_load(load_norm, agg_weather_dk, year)
+            dunkelflaute_counts = count_dunkelflaute_sections(agg_weather_dk["residual_load"])
+
+            corr_wind_solar = calc_correlation_wind_solar(agg_weather_dk)
+            full_load_hours = calc_full_load_hours_for_year(agg_weather_dk, year=year)
+            rolling_variances = calc_rolling_variances_weather(agg_weather_dk)
+
+            results[year] = {
+                "corr_wind_solar": corr_wind_solar,
+                "full_load_hours": full_load_hours,
+                "rolling_variances": rolling_variances,
+                "dunkelflaute_counts": dunkelflaute_counts,
+            }
+
+            model_metrics = load_model_metrics_for_year(year, config)
+            mean_variance_1d = calc_mean_rolling_variance(rolling_variances, suffix="var_1d")
+            mean_variance_7d = calc_mean_rolling_variance(rolling_variances, suffix="var_7d")
+
+            results[year].update(model_metrics)
+            results[year].update(
+                {
+                    "mean_variance_1d": mean_variance_1d,
+                    "mean_variance_7d": mean_variance_7d,
+                }
+            )
+            results[year].pop("network", None)
+
+            print("Model network file:")
+            print(model_metrics["network_file"])
+            print("Total model system cost:")
+            print(model_metrics["total_system_cost"])
+            print("Battery power by duration MW (2h/4h/6h):")
+            print(model_metrics["battery_power_mw"])
+            print(f"Mean rolling variance (weather series) 1d: {mean_variance_1d}")
+            print(f"Mean rolling variance (weather series) 7d: {mean_variance_7d}")
+        except Exception as exc:
+            print(f"Weather analysis failed for year {year}: {exc}")
+
+    return results
+
+
+config = ProjectConfig("config/project_config.yaml")
+results_analysis = run_weather_analysis_for_years([2012, 2024, 2016], config)
+
+
+if results_analysis:
+    plot_output_dir = PROJECT_ROOT / "results" / "plots"
+    plot_output_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_plot(fig, filename):
+        output_path = plot_output_dir / filename
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        print(f"Saved plot: {output_path}")
+
+    full_load_hours_by_year = {year: data["full_load_hours"] for year, data in results_analysis.items()}
+    dunkelflaute_by_year = {year: data["dunkelflaute_counts"] for year, data in results_analysis.items()}
+    correlation_by_year = {year: data["corr_wind_solar"] for year, data in results_analysis.items()}
+    rolling_by_year = {year: data["rolling_variances"] for year, data in results_analysis.items()}
+
+    fig_dunkel, _ = plot_compare_dunkelflaute_counts(dunkelflaute_by_year)
+    save_plot(fig_dunkel, "figure_01_dunkelflaute_counts_by_year.png")
+
+    fig_rolling, _ = plot_compare_mean_rolling_variance_time(rolling_by_year, suffix="var_7d")
+    save_plot(fig_rolling, "figure_02_mean_rolling_variance_weather_series_7d_over_time.png")
+
+    system_cost_by_year = {
+        year: data["total_system_cost"]
+        for year, data in results_analysis.items()
+        if "total_system_cost" in data
+    }
+    renewable_capacity_by_year = {
+        year: data["renewable_capacity_mw"]
+        for year, data in results_analysis.items()
+        if "renewable_capacity_mw" in data
+    }
+    battery_power_by_year = {
+        year: data["battery_power_mw"]
+        for year, data in results_analysis.items()
+        if "battery_power_mw" in data
+    }
+    mean_variance_7d_by_year = {
+        year: data["mean_variance_7d"]
+        for year, data in results_analysis.items()
+        if "mean_variance_7d" in data
+    }
+    mean_variance_1d_by_year = {
+        year: data["mean_variance_1d"]
+        for year, data in results_analysis.items()
+        if "mean_variance_1d" in data
+    }
+
+    if full_load_hours_by_year and system_cost_by_year and correlation_by_year and mean_variance_7d_by_year and dunkelflaute_by_year:
+        fig_vs, _ = plot_vs_analysis_subplots(
+            full_load_hours_by_year,
+            system_cost_by_year,
+            correlation_by_year,
+            mean_variance_7d_by_year,
+            dunkelflaute_by_year,
+        )
+        save_plot(fig_vs, "figure_03_vs_analysis_subplots_system_cost.png")
+    if battery_power_by_year and renewable_capacity_by_year and system_cost_by_year:
+        fig_capacity_cost, _ = plot_installed_capacity_and_system_cost(
+            battery_power_by_year,
+            renewable_capacity_by_year,
+            system_cost_by_year,
+        )
+        save_plot(fig_capacity_cost, "figure_04_installed_battery_renewables_and_system_cost.png")
+    if mean_variance_1d_by_year and mean_variance_7d_by_year and battery_power_by_year:
+        fig_variance_battery, _ = plot_variance_vs_battery_installed(
+            mean_variance_1d_by_year,
+            mean_variance_7d_by_year,
+            battery_power_by_year,
+        )
+        save_plot(fig_variance_battery, "figure_05_variance_weather_series_vs_battery_power.png")
+
+    plt.show()

@@ -54,6 +54,7 @@ pypsa_dn-main/
 │   ├── download_era5_data.py          # Download ERA5 weather data from Copernicus CDS
 │   ├── prepare_weather_profiles.py    # Generate capacity factor CSVs from ERA5 cutout
 │   └── rename_networks.py             # Rename solved network files to numbered convention
+├   |── run                            # Weather analysis runner — Dunkelflaute, FFT, rolling variance  
 │
 └── src/
     ├── build_basic_network.py         # Network construction and saving
