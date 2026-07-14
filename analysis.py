@@ -271,7 +271,7 @@ def plot_03():
                              lw=1.2, alpha=0.6)
         if not stor_w.empty:
             for car in sorted(stor_w.columns):
-                sw = stor_w[car].clip(lower=0)
+                sw = stor_w[car]
                 if sw.sum() > 0:
                     sw.plot(ax=ax, label=car, color=color(car),
                             lw=1.2, ls=":", alpha=0.6)
@@ -292,7 +292,7 @@ def plot_03():
 
         ax.set_ylabel("Power (GW, weekly avg)", fontsize=12)
         ax.set_title(label, fontweight="bold", fontsize=13)
-        ax.set_ylim(bottom=0)
+      
         ax.legend(loc="upper left", fontsize=9, ncol=5, framealpha=0.9)
         ax.grid(alpha=0.2)
 
@@ -1221,7 +1221,7 @@ if __name__ == "__main__":
     # plot_00b()
     # plot_01()
     # plot_02()
-    # plot_03()
+    plot_03()
     # plot_04()
     # plot_05()
     # plot_06()
@@ -1240,7 +1240,7 @@ if __name__ == "__main__":
     # plot_18("02_baseline.nc",  "Baseline")
     # plot_19("04_zero_co2.nc",  "Zero CO2")
     # plot_19("02_baseline.nc",  "Baseline")
-    plot_20()
+
     #plot_21()
     #plot_22()
     #plot_annual_generation_with_storage() #03c
